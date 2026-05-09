@@ -80,7 +80,13 @@ function extractData() {
     SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
   }
   
-  if (cheapestUpgrade !== Infinity || fullText.match(/t[1-4][\s\n]*-/i) || fullText.includes("req:")) {
+  if (
+    cheapestUpgrade !== Infinity || 
+    fullText.match(/t[1-4][\s\n]*[-–—]/i) || 
+    fullText.includes("req:") ||
+    fullText.match(/\bt1\b[\s\S]{1,50}\bt2\b[\s\S]{1,50}\bt3\b/i) ||
+    fullText.match(/amplifier\s*=>/i)
+  ) {
     SHREDDER_STATE.hasScannedUpgrades = true;
   }
 

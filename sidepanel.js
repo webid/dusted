@@ -30,6 +30,7 @@ function formatTime(ticks) {
 }
 
 function formatDelta(delta) {
+  if (delta === undefined || delta === null || Number.isNaN(delta)) return '<span class="neutral-delta">--</span>';
   if (delta === -999) return '<span class="neutral-delta">Filtered</span>';
   const val = delta.toFixed(2);
   if (delta > 0) return `<span class="positive-delta">+${val}%</span>`;
@@ -131,7 +132,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       recEl.style.color = "#e27e5d";
     } else if (state.recommendation.includes("Target Acquisition")) {
       const waitStr = state.bestPurchaseWait > 0 ? formatTime(state.bestPurchaseWait) : "[BUY NOW]";
-      recEl.textContent = `${state.recommendation} ${waitStr}`;
+      let finalStr = `${state.recommendation} ${waitStr}`;
+      if (state.bestPurchaseWait > 0 && state.hasAffordableUpgrades) {
+        finalStr += " [AFFORDABLE TARGETS READY]";
+      }
+      recEl.textContent = finalStr;
       recEl.style.color = "#48bbea";
     } else {
       recEl.textContent = state.recommendation;

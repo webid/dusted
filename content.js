@@ -16,7 +16,8 @@ const SHREDDER_STATE = {
   tcStart: 6200,
   condensers: [],
   compressions: 0,
-  nextTcCost: new Decimal(0)
+  nextTcCost: new Decimal(0),
+  unclaimedDust: new Decimal(0)
 };
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -50,6 +51,14 @@ function extractData() {
   } else {
     const dtMatch = fullText.match(/dust \/ tick\s+([0-9.e+]+)/i);
     if (dtMatch) SHREDDER_STATE.dustPerTick = parseSciNum(dtMatch[1]);
+  }
+
+  // Parse unclaimed production
+  const unclaimedMatch = fullText.match(/\(\+([0-9.e+]+)\s*dust\)/i);
+  if (unclaimedMatch) {
+    SHREDDER_STATE.unclaimedDust = parseSciNum(unclaimedMatch[1]);
+  } else {
+    SHREDDER_STATE.unclaimedDust = new Decimal(0);
   }
 
   // Motes & Active Ticks via raw text to ignore arbitrary HTML nesting
@@ -115,7 +124,16 @@ function extractData() {
   // Stats Telemetry Parsing
   const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);
   if (ticksRunMatch) {
-    SHREDDER_STATE.ticksThisRun = parseInt(ticksRunMatch[1].replace(/,/g, ''), 10);
+    const currentTicks = parseInt(ticksRunMatch[1].replace(/,/g, ''), 10);
+    if (SHREDDER_STATE.ticksThisRun > 0 && currentTicks < SHREDDER_STATE.ticksThisRun - 100) {
+      // RESET DETECTED
+      SHREDDER_STATE.nextTcCost = new Decimal(0);
+      SHREDDER_STATE.hasScannedTC = false;
+      SHREDDER_STATE.compressions = "Pending...";
+      SHREDDER_STATE.cheapestUpgrade = null;
+      SHREDDER_STATE.hasScannedUpgrades = false;
+    }
+    SHREDDER_STATE.ticksThisRun = currentTicks;
     SHREDDER_STATE.hasScannedStats = true;
   }
   
@@ -152,6 +170,7 @@ function extractData() {
 
 function evaluateStrategy() {
   const P_tick = SHREDDER_STATE.dustPerTick;
+  const effectiveDust = SHREDDER_STATE.dust.add(SHREDDER_STATE.unclaimedDust);
   let timeToFloor = 0;
   
   if (P_tick.gt(0)) {
@@ -177,6 +196,7 @@ function evaluateStrategy() {
   let bestPurchase = null;
   let bestPurchaseWait = 0;
   let maxTimeSaved = -Infinity;
+  let hasAffordableUpgrades = false;
   
   // Calculate efficiency delta for each condenser
   const evaluatedCondensers = SHREDDER_STATE.condensers.map(c => {
@@ -187,7 +207,7 @@ function evaluateStrategy() {
     if (isDC1_4 && c.nextCost.gt(new Decimal("1e100")) && c.nextCost.gt(P_tick)) {
       efficiencyDelta = -999; // Filtered out
     } else if (P_tick.gt(0)) {
-      const diff = Decimal.max(0, c.nextCost.sub(SHREDDER_STATE.dust));
+      const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
       const t_wait = diff.div(P_tick).toNumber();
       
       // Estimate P_new using the exact carry effect bases
@@ -204,6 +224,9 @@ function evaluateStrategy() {
         bestPurchase = c.tier;
         bestPurchaseWait = t_wait;
       }
+      if (time_saved > 0 && t_wait === 0) {
+        hasAffordableUpgrades = true;
+      }
     }
 
     return {
@@ -217,7 +240,7 @@ function evaluateStrategy() {
   // Evaluate TC
   let tc_efficiencyDelta = 0;
   if (SHREDDER_STATE.nextTcCost.gt(0) && P_tick.gt(0)) {
-    const diff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(SHREDDER_STATE.dust));
+    const diff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(effectiveDust));
     const t_wait = diff.div(P_tick).toNumber();
     
     // Apply Temporal Compression estimated multiplier
@@ -233,12 +256,15 @@ function evaluateStrategy() {
       bestPurchase = "Temporal Compression";
       bestPurchaseWait = t_wait;
     }
+    if (time_saved_tc > 0 && t_wait === 0) {
+      hasAffordableUpgrades = true;
+    }
   }
 
   // Hard Exit Rule Simulation
   let recommendation = "Hold Position (Natural Growth)";
   
-  const isPostE308 = SHREDDER_STATE.dust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0;
+  const isPostE308 = effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0;
   const totalMotes = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
   const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = SHREDDER_STATE.activeTicks >= SHREDDER_STATE.softcap;
@@ -257,6 +283,7 @@ function evaluateStrategy() {
     timeToFloor: timeToFloor,
     recommendation: recommendation,
     bestPurchaseWait: bestPurchaseWait,
+    hasAffordableUpgrades: hasAffordableUpgrades,
     condensers: evaluatedCondensers,
     tc_efficiencyDelta: tc_efficiencyDelta
   };
@@ -275,7 +302,7 @@ const intervalId = setInterval(() => {
       motes: SHREDDER_STATE.motes,
       pendingMotes: SHREDDER_STATE.pendingMotes,
       totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
-      needsCRScan: SHREDDER_STATE.dust.gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
+      needsCRScan: effectiveDust.gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
       cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
       hasScannedTC: SHREDDER_STATE.hasScannedTC,
       hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,
@@ -284,6 +311,7 @@ const intervalId = setInterval(() => {
       tcStart: SHREDDER_STATE.tcStart,
       compressions: SHREDDER_STATE.compressions,
       nextTcCost: SHREDDER_STATE.nextTcCost.toString(),
+      hasAffordableUpgrades: strategy.hasAffordableUpgrades,
       ...strategy
     };
     

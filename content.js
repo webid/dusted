@@ -199,7 +199,7 @@ function evaluateStrategy() {
   };
 }
 
-setInterval(() => {
+const intervalId = setInterval(() => {
   try {
     extractData();
     const strategy = evaluateStrategy();
@@ -215,8 +215,16 @@ setInterval(() => {
       ...strategy
     };
     
-    chrome.runtime.sendMessage({ type: 'HUD_UPDATE', payload }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'HUD_UPDATE', payload }).catch((err) => {
+      if (err.message && err.message.includes("Extension context invalidated")) {
+        clearInterval(intervalId);
+      }
+    });
   } catch (err) {
-    console.error("Dust HUD Eval Error:", err);
+    if (err.message && err.message.includes("Extension context invalidated")) {
+      clearInterval(intervalId);
+    } else {
+      console.error("Dust HUD Eval Error:", err);
+    }
   }
 }, 1000);

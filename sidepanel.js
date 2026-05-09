@@ -6,6 +6,29 @@ document.getElementById('target-motes').addEventListener('input', (e) => {
   });
 });
 
+document.getElementById('cheapest-upgrade-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  const val = parseFloat(e.target.textContent);
+  document.getElementById('target-motes').value = val;
+  chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    if (tabs[0]) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_TARGET_MOTES', value: val }).catch(()=>{});
+    }
+  });
+});
+
+function formatTime(ticks) {
+  if (!ticks || ticks <= 0) return "";
+  const totalSeconds = Math.round(ticks);
+  if (totalSeconds === 0) return "(< 1s)";
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `(~${h}h ${m}m ${s}s)`;
+  if (m > 0) return `(~${m}m ${s}s)`;
+  return `(~${s}s)`;
+}
+
 function formatDelta(delta) {
   if (delta === -999) return '<span class="neutral-delta">Filtered</span>';
   const val = delta.toFixed(2);
@@ -18,9 +41,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'HUD_UPDATE') {
     const state = message.payload;
     
+    // Init Checklist
+    const initBox = document.getElementById('init-checklist');
+    if (!state.hasScannedTC || !state.hasScannedUpgrades || !state.hasScannedStats) {
+      initBox.style.display = 'block';
+      
+      const tcCheck = document.getElementById('check-tc');
+      if (state.hasScannedTC) {
+        tcCheck.textContent = "[OK] Temporal Matrix Online.";
+        tcCheck.style.color = "#516079";
+      } else {
+        tcCheck.textContent = "[-] Calibrating Temporal Matrix... (Visit TC Tab)";
+        tcCheck.style.color = "#e27e5d";
+      }
+      
+      const upCheck = document.getElementById('check-up');
+      if (state.hasScannedUpgrades) {
+        upCheck.textContent = "[OK] Expansion Trees Online.";
+        upCheck.style.color = "#516079";
+      } else {
+        upCheck.textContent = "[-] Calibrating Expansion Trees... (Visit Upgrades Tab)";
+        upCheck.style.color = "#e27e5d";
+      }
+
+      const stCheck = document.getElementById('check-st');
+      if (state.hasScannedStats) {
+        stCheck.textContent = "[OK] Telemetry Online.";
+        stCheck.style.color = "#516079";
+      } else {
+        stCheck.textContent = "[-] Calibrating Telemetry... (Visit Stats Tab)";
+        stCheck.style.color = "#e27e5d";
+      }
+    } else {
+      initBox.style.display = 'none';
+    }
+
     // Update KPI: Time to Floor
     const ttf = Math.floor(state.timeToFloor);
     document.getElementById('time-to-floor').textContent = ttf > 0 ? ttf.toLocaleString() : "0";
+    document.getElementById('time-estimate').textContent = ttf > 0 ? formatTime(ttf) : "";
 
     const softcap = state.softcap || 30760;
     const progress = Math.min(100, (state.activeTicks / softcap) * 100);
@@ -31,22 +90,48 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     document.getElementById('dust').textContent = new Decimal(state.dust).toExponential(3);
     document.getElementById('dust-per-tick').textContent = new Decimal(state.dustPerTick).toExponential(3);
     document.getElementById('motes').textContent = state.motes.toLocaleString();
+    document.getElementById('pending-motes').textContent = state.pendingMotes ? state.pendingMotes.toLocaleString() : "0";
+    document.getElementById('total-motes').textContent = state.totalMotes ? state.totalMotes.toLocaleString() : state.motes.toLocaleString();
     
-    // Update recommendation
-    const recEl = document.getElementById('recommendation');
-    recEl.textContent = state.recommendation;
-    if (state.recommendation.includes("CRITICAL")) {
-      recEl.style.color = "#f85149";
-    } else if (state.recommendation.includes("Target")) {
-      recEl.style.color = "#3fb950";
-    } else {
-      recEl.style.color = "#58a6ff";
+    if (state.cheapestUpgrade) {
+      document.getElementById('cheapest-upgrade-container').style.display = 'block';
+      document.getElementById('cheapest-upgrade-link').textContent = state.cheapestUpgrade;
     }
 
-    // Update TCs
-    document.getElementById('compressions').textContent = state.compressions;
-    document.getElementById('next-tc-cost').textContent = new Decimal(state.nextTcCost).toExponential(3);
-    document.getElementById('tc-delta').innerHTML = formatDelta(state.tc_efficiencyDelta);
+    // Update Telemetry
+    document.getElementById('ticks-this-run').textContent = (state.ticksThisRun || 0).toLocaleString();
+    document.getElementById('active-ticks').textContent = (state.activeTicks || 0).toLocaleString();
+    document.getElementById('tc-start').textContent = (state.tcStart || 0).toLocaleString();
+    document.getElementById('softcap-limit').textContent = (state.softcap || 30760).toLocaleString();
+
+    // Update recommendation
+    const recEl = document.getElementById('recommendation');
+    
+    if (state.recommendation.includes("CRITICAL: MOTE")) {
+      recEl.textContent = state.recommendation;
+      recEl.style.color = "#65b086";
+    } else if (state.recommendation.includes("CRITICAL")) {
+      recEl.textContent = state.recommendation;
+      recEl.style.color = "#e27e5d";
+    } else if (state.recommendation.includes("Target Acquisition")) {
+      const waitStr = state.bestPurchaseWait > 0 ? formatTime(state.bestPurchaseWait) : "[BUY NOW]";
+      recEl.textContent = `${state.recommendation} ${waitStr}`;
+      recEl.style.color = "#48bbea";
+    } else {
+      recEl.textContent = state.recommendation;
+      recEl.style.color = "#8b9bb4";
+    }
+
+    // Update TC
+    if (new Decimal(state.nextTcCost).eq(0)) {
+      document.getElementById('compressions').textContent = "Pending...";
+      document.getElementById('next-tc-cost').textContent = "(Visit TC tab to scan)";
+      document.getElementById('tc-delta').innerHTML = "--";
+    } else {
+      document.getElementById('compressions').textContent = state.compressions;
+      document.getElementById('next-tc-cost').textContent = new Decimal(state.nextTcCost).toExponential(3);
+      document.getElementById('tc-delta').innerHTML = formatDelta(state.tc_efficiencyDelta);
+    }
 
     // Update grid
     const grid = document.getElementById('grid-status');

@@ -6,7 +6,14 @@ const SHREDDER_STATE = {
   activeTicks: 0,
   softcap: 30760,
   motes: 0,
-  targetMotes: 40000000,
+  pendingMotes: 0,
+  targetMotes: 40,
+  cheapestUpgrade: null,
+  hasScannedTC: false,
+  hasScannedUpgrades: false,
+  hasScannedStats: false,
+  ticksThisRun: 0,
+  tcStart: 6200,
   condensers: [],
   compressions: 0,
   nextTcCost: new Decimal(0)
@@ -57,13 +64,63 @@ function extractData() {
     }
   }
 
+  // Upgrades parsing
+  let cheapestUpgrade = Infinity;
+  const upgradeMatches = fullText.matchAll(/([\d.]+)([kKmM]?)\s+BUY/gi);
+  for (const match of upgradeMatches) {
+    let cost = parseFloat(match[1]);
+    const suffix = match[2].toLowerCase();
+    if (suffix === 'k') cost /= 1000;
+    // Assuming 'm' is motes, so no conversion needed for m since motes are base unit
+    if (cost < cheapestUpgrade) {
+      cheapestUpgrade = cost;
+    }
+  }
+  if (cheapestUpgrade !== Infinity) {
+    SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
+  }
+  
+  if (cheapestUpgrade !== Infinity || fullText.match(/t[1-4][\s\n]*-/i) || fullText.includes("req:")) {
+    SHREDDER_STATE.hasScannedUpgrades = true;
+  }
+
   // Temporal Compression parsing
   const compMatch = fullText.match(/compressions\s+(\d+)/i);
-  if (compMatch) SHREDDER_STATE.compressions = parseInt(compMatch[1], 10);
+  if (compMatch) {
+    SHREDDER_STATE.compressions = parseInt(compMatch[1], 10);
+    SHREDDER_STATE.hasScannedTC = true;
+  }
 
   const tcCostMatch = fullText.match(/compressions[\s\S]{1,200}?cost\s+([0-9.e+]+)\s+dust/i);
   if (tcCostMatch) {
     SHREDDER_STATE.nextTcCost = parseSciNum(tcCostMatch[1]);
+    SHREDDER_STATE.hasScannedTC = true;
+  }
+
+  // CR Tab Pending Motes Parsing (Post e308)
+  if (SHREDDER_STATE.dust.gte(new Decimal("1e308"))) {
+    // The CR tab shows: motes gained ~7.18
+    const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
+    const crMatch = fullText.match(crRegex);
+    if (crMatch) {
+      SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ''));
+    }
+  } else {
+    SHREDDER_STATE.pendingMotes = 0;
+  }
+
+  // Stats Telemetry Parsing
+  const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);
+  if (ticksRunMatch) {
+    SHREDDER_STATE.ticksThisRun = parseInt(ticksRunMatch[1].replace(/,/g, ''), 10);
+    SHREDDER_STATE.hasScannedStats = true;
+  }
+  
+  const tcStartMatch = fullText.match(/eff\. tc start \/ softcap\s+([\d,]+)\s*\/\s*([\d,]+)/i);
+  if (tcStartMatch) {
+    SHREDDER_STATE.tcStart = parseInt(tcStartMatch[1].replace(/,/g, ''), 10);
+    SHREDDER_STATE.softcap = parseInt(tcStartMatch[2].replace(/,/g, ''), 10);
+    SHREDDER_STATE.hasScannedStats = true;
   }
 
   // Condenser Grid (Robust row detection ignoring exact CSS styles)
@@ -115,6 +172,7 @@ function evaluateStrategy() {
   };
 
   let bestPurchase = null;
+  let bestPurchaseWait = 0;
   let maxTimeSaved = -Infinity;
   
   // Calculate efficiency delta for each condenser
@@ -141,6 +199,7 @@ function evaluateStrategy() {
       if (time_saved > maxTimeSaved && time_saved > 0) {
         maxTimeSaved = time_saved;
         bestPurchase = c.tier;
+        bestPurchaseWait = t_wait;
       }
     }
 
@@ -169,6 +228,7 @@ function evaluateStrategy() {
     if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
       maxTimeSaved = time_saved_tc;
       bestPurchase = "Temporal Compression";
+      bestPurchaseWait = t_wait;
     }
   }
 
@@ -176,7 +236,8 @@ function evaluateStrategy() {
   let recommendation = "Hold Position (Natural Growth)";
   
   const isPostE308 = SHREDDER_STATE.dust.gte(new Decimal("1e308"));
-  const hasTargetMotes = SHREDDER_STATE.motes >= SHREDDER_STATE.targetMotes;
+  const totalMotes = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
+  const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = SHREDDER_STATE.activeTicks >= SHREDDER_STATE.softcap;
 
   if (isPostE308) {
@@ -185,7 +246,7 @@ function evaluateStrategy() {
     } else if (hitSoftcap) {
       recommendation = "CRITICAL: SOFTCAP HIT. GRINDING HALTED.";
     } else {
-      recommendation = "Pushing to Softcap / Target Motes...";
+      recommendation = "Pushing to Target (Monitor CR Tab for Motes)";
     }
   } else if (bestPurchase) {
     recommendation = `Target Acquisition: ${bestPurchase}`;
@@ -194,6 +255,7 @@ function evaluateStrategy() {
   return {
     timeToFloor: timeToFloor,
     recommendation: recommendation,
+    bestPurchaseWait: bestPurchaseWait,
     condensers: evaluatedCondensers,
     tc_efficiencyDelta: tc_efficiencyDelta
   };
@@ -210,6 +272,14 @@ const intervalId = setInterval(() => {
       activeTicks: SHREDDER_STATE.activeTicks,
       softcap: SHREDDER_STATE.softcap,
       motes: SHREDDER_STATE.motes,
+      pendingMotes: SHREDDER_STATE.pendingMotes,
+      totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
+      cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
+      hasScannedTC: SHREDDER_STATE.hasScannedTC,
+      hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,
+      hasScannedStats: SHREDDER_STATE.hasScannedStats,
+      ticksThisRun: SHREDDER_STATE.ticksThisRun,
+      tcStart: SHREDDER_STATE.tcStart,
       compressions: SHREDDER_STATE.compressions,
       nextTcCost: SHREDDER_STATE.nextTcCost.toString(),
       ...strategy

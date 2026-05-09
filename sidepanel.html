@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>Dust Protocol HUD</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -8,10 +9,17 @@
   <div class="container">
     <h1>Intelligence HUD</h1>
     
+    <div id="init-checklist" style="font-size: 0.7em; color: #e27e5d; margin-bottom: 2px; display: none; background: rgba(226, 126, 93, 0.05); padding: 8px; border: 1px dashed #e27e5d; border-radius: 2px;">
+      <div style="font-weight:bold; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;">Sensor Alignment Required:</div>
+      <div id="check-tc" style="margin-bottom: 2px;">[-] Calibrating Temporal Matrix... (Visit TC Tab)</div>
+      <div id="check-up" style="margin-bottom: 2px;">[-] Calibrating Expansion Trees... (Visit Upgrades Tab)</div>
+      <div id="check-st">[-] Calibrating Telemetry... (Visit Stats Tab)</div>
+    </div>
+    
     <div class="stat-box primary-kpi">
       <h2>Time to Floor (e308)</h2>
       <div id="time-to-floor" class="big-number">--</div>
-      <div class="sub-text">Active Ticks Remaining</div>
+      <div class="sub-text">Active Ticks <span id="time-estimate"></span></div>
       
       <div class="progress-container">
         <div id="softcap-bar" class="progress-bar"></div>
@@ -21,12 +29,26 @@
 
     <div class="stat-box">
       <p><strong>Dust:</strong> <span id="dust">0</span></p>
-      <p><strong>Dust/Tick ($P_t$):</strong> <span id="dust-per-tick">0</span></p>
+      <p title="Current production velocity per tick."><strong style="cursor:help; border-bottom: 1px dashed #516079;">Dust/Tick:</strong> <span id="dust-per-tick">0</span></p>
       <p><strong>Current Motes:</strong> <span id="motes">0</span></p>
+      <p title="Motes to be gained upon crystallisation."><strong style="cursor:help; border-bottom: 1px dashed #516079;">Pending Motes:</strong> <span id="pending-motes">0</span></p>
+      <p title="Total motes you will have after resetting."><strong style="cursor:help; border-bottom: 1px dashed #516079;">Projected Total:</strong> <span id="total-motes" style="color: #65b086;">0</span></p>
       <div class="input-row">
         <strong>Target Motes:</strong> 
-        <input type="number" id="target-motes" value="40000000" class="hud-input">
+        <input type="number" id="target-motes" value="40" class="hud-input">
       </div>
+      <div id="cheapest-upgrade-container" style="display:none; text-align:right; font-size: 0.75em; margin-top: 6px;">
+        <span style="color: #516079;">Cheapest unbought: </span>
+        <a href="#" id="cheapest-upgrade-link" style="color: #48bbea; text-decoration: none; border-bottom: 1px dashed #48bbea;">40</a>
+      </div>
+    </div>
+
+    <h2>Temporal Telemetry</h2>
+    <div class="stat-box">
+      <p><strong>Ticks This Run:</strong> <span id="ticks-this-run">0</span></p>
+      <p><strong>Active Ticks:</strong> <span id="active-ticks">0</span></p>
+      <p title="Ticks required before Temporal Compression efficiency begins scaling."><strong style="cursor:help; border-bottom: 1px dashed #516079;">TC Eff. Start:</strong> <span id="tc-start">0</span></p>
+      <p title="Threshold where exponential growth heavily decays."><strong style="cursor:help; border-bottom: 1px dashed #516079;">Softcap Limit:</strong> <span id="softcap-limit">0</span></p>
     </div>
 
     <div class="stat-box highlight-kpi">
@@ -36,7 +58,7 @@
     
     <h2>Condenser Grid</h2>
     <div class="grid-header">
-      <span>Tier</span><span style="text-align: right;">Cost</span><span style="text-align: right;">Efficiency Δ</span>
+      <span>Tier</span><span style="text-align: right;">Cost</span><span title="Percentage of total grinding time saved if you wait to buy this upgrade." style="text-align: right; cursor:help; border-bottom: 1px dashed #516079;">Time Saved</span>
     </div>
     <div id="grid-status" class="grid-container">
       <!-- Grid rows -->
@@ -46,7 +68,7 @@
     <div class="stat-box tc-box">
       <p><strong>Count:</strong> <span id="compressions">0</span></p>
       <p><strong>Next Cost:</strong> <span id="next-tc-cost">0</span></p>
-      <p><strong>Efficiency Δ:</strong> <span id="tc-delta">0%</span></p>
+      <p title="Percentage of total grinding time saved if you wait to buy this compression."><strong style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved:</strong> <span id="tc-delta">0%</span></p>
     </div>
   </div>
   <script src="break_infinity.js"></script>

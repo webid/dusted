@@ -97,15 +97,12 @@ function extractData() {
     SHREDDER_STATE.hasScannedTC = true;
   }
 
-  // CR Tab Pending Motes Parsing (Post e308)
-  if (SHREDDER_STATE.dust.gte(new Decimal("1e308"))) {
-    // The CR tab shows: motes gained ~7.18
-    const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
-    const crMatch = fullText.match(crRegex);
-    if (crMatch) {
-      SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ''));
-    }
-  } else {
+  // CR Tab Pending Motes Parsing
+  const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
+  const crMatch = fullText.match(crRegex);
+  if (crMatch) {
+    SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ''));
+  } else if (fullText.toLowerCase().includes("crystallise at 1e308")) {
     SHREDDER_STATE.pendingMotes = 0;
   }
 
@@ -235,21 +232,19 @@ function evaluateStrategy() {
   // Hard Exit Rule Simulation
   let recommendation = "Hold Position (Natural Growth)";
   
-  const isPostE308 = SHREDDER_STATE.dust.gte(new Decimal("1e308"));
+  const isPostE308 = SHREDDER_STATE.dust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0;
   const totalMotes = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
   const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = SHREDDER_STATE.activeTicks >= SHREDDER_STATE.softcap;
 
-  if (isPostE308) {
-    if (hasTargetMotes) {
-      recommendation = "CRITICAL: MOTE TARGET REACHED. CRYSTALLISE!";
-    } else if (hitSoftcap) {
-      recommendation = "CRITICAL: SOFTCAP HIT. GRINDING HALTED.";
-    } else {
-      recommendation = "Pushing to Target (Monitor CR Tab for Motes)";
-    }
-  } else if (bestPurchase) {
+  if (hasTargetMotes) {
+    recommendation = "CRITICAL: TARGET REACHED! BUY MAX DC THEN CRYSTALLISE";
+  } else if (hitSoftcap) {
+    recommendation = "CRITICAL: SOFTCAP HIT! BUY MAX DC THEN CRYSTALLISE";
+  } else if (bestPurchase && maxTimeSaved > 0) {
     recommendation = `Target Acquisition: ${bestPurchase}`;
+  } else if (isPostE308) {
+    recommendation = "Pushing to Target (Monitor CR Tab for Motes)";
   }
 
   return {
@@ -274,6 +269,7 @@ const intervalId = setInterval(() => {
       motes: SHREDDER_STATE.motes,
       pendingMotes: SHREDDER_STATE.pendingMotes,
       totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
+      needsCRScan: SHREDDER_STATE.dust.gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
       cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
       hasScannedTC: SHREDDER_STATE.hasScannedTC,
       hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,

@@ -43,8 +43,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Init Checklist
     const initBox = document.getElementById('init-checklist');
+    let showChecklist = false;
+
     if (!state.hasScannedTC || !state.hasScannedUpgrades || !state.hasScannedStats) {
-      initBox.style.display = 'block';
+      showChecklist = true;
       
       const tcCheck = document.getElementById('check-tc');
       if (state.hasScannedTC) {
@@ -72,6 +74,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         stCheck.textContent = "[-] Calibrating Telemetry... (Visit Stats Tab)";
         stCheck.style.color = "#e27e5d";
       }
+    }
+
+    const crCheck = document.getElementById('check-cr');
+    if (state.needsCRScan) {
+      showChecklist = true;
+      crCheck.style.display = 'block';
+      crCheck.textContent = "[-] Calibrating Post-e308 Motes... (Visit CR Tab)";
+      crCheck.style.color = "#e27e5d";
+    } else {
+      crCheck.style.display = 'none';
+    }
+
+    if (showChecklist) {
+      initBox.style.display = 'block';
     } else {
       initBox.style.display = 'none';
     }

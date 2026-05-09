@@ -4,6 +4,8 @@
   "version": "1.0",
   "description": "Automate 'Dust Protocol' on Etherlink Shadownet using the Shredder strategy.",
   "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
     "128": "icon128.png"
   },
   "permissions": [
@@ -19,7 +21,12 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Open Dust Optimizer"
+    "default_title": "Open Dust Optimizer",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
   },
   "side_panel": {
     "default_path": "sidepanel.html"

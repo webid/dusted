@@ -189,14 +189,14 @@ function evaluateStrategy() {
     'DC5': 8,
     'DC6': 10,
     'DC7': 12,
-    'DC8': 15,
-    'TC': 1.058 // Estimated from 1.624e6 at 253 compressions
+    'DC7': 12,
+    'DC8': 15
   };
 
   let bestPurchase = null;
   let bestPurchaseWait = 0;
   let maxTimeSaved = -Infinity;
-  let hasAffordableUpgrades = false;
+  let affordableTargets = [];
   
   // Calculate efficiency delta for each condenser
   const evaluatedCondensers = SHREDDER_STATE.condensers.map(c => {
@@ -225,7 +225,7 @@ function evaluateStrategy() {
         bestPurchaseWait = t_wait;
       }
       if (time_saved > 0 && t_wait === 0) {
-        hasAffordableUpgrades = true;
+        affordableTargets.push(c.tier);
       }
     }
 
@@ -243,8 +243,22 @@ function evaluateStrategy() {
     const diff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(effectiveDust));
     const t_wait = diff.div(P_tick).toNumber();
     
-    // Apply Temporal Compression estimated multiplier
-    const P_new_tc = P_tick.mul(MULTIPLIERS['TC']);
+    // Apply Temporal Compression multiplier using the forecasting formula (Efficiency = 1.0)
+    // Formula: M_tc = (1.0583 * MotePower) ^ (TC * Efficiency)
+    // By setting Efficiency = 1.0, we evaluate the future value of the entire stack
+    const motePower = Math.max(1, SHREDDER_STATE.motes);
+    const baseMultiplier = 1.0583 * motePower;
+    
+    let multiplierToApply;
+    if (SHREDDER_STATE.tcStart > 0 && SHREDDER_STATE.activeTicks >= SHREDDER_STATE.tcStart) {
+      // If the timer has cleared, P_tick already contains the stack. Marginal gain is the base.
+      multiplierToApply = new Decimal(baseMultiplier);
+    } else {
+      // If timer is not clear, apply Net Present Value by projecting the entire stack
+      multiplierToApply = Decimal.pow(baseMultiplier, SHREDDER_STATE.compressions + 1);
+    }
+    
+    const P_new_tc = P_tick.mul(multiplierToApply);
     const t_floor_after_tc = (308 - P_new_tc.log10()) / Math.log10(1.02);
     const total_time_if_buy_tc = t_wait + t_floor_after_tc;
     const time_saved_tc = timeToFloor - total_time_if_buy_tc;
@@ -257,7 +271,7 @@ function evaluateStrategy() {
       bestPurchaseWait = t_wait;
     }
     if (time_saved_tc > 0 && t_wait === 0) {
-      hasAffordableUpgrades = true;
+      affordableTargets.push("TC");
     }
   }
 
@@ -283,7 +297,7 @@ function evaluateStrategy() {
     timeToFloor: timeToFloor,
     recommendation: recommendation,
     bestPurchaseWait: bestPurchaseWait,
-    hasAffordableUpgrades: hasAffordableUpgrades,
+    affordableTargets: affordableTargets,
     condensers: evaluatedCondensers,
     tc_efficiencyDelta: tc_efficiencyDelta
   };
@@ -311,7 +325,6 @@ const intervalId = setInterval(() => {
       tcStart: SHREDDER_STATE.tcStart,
       compressions: SHREDDER_STATE.compressions,
       nextTcCost: SHREDDER_STATE.nextTcCost.toString(),
-      hasAffordableUpgrades: strategy.hasAffordableUpgrades,
       ...strategy
     };
     

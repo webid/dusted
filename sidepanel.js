@@ -150,8 +150,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (state.bestPurchaseWait > 0) {
         const timeStr = formatTime(state.bestPurchaseWait).replace(/[()~]/g, '').trim();
         finalStr = `BUY ${bestTarget} IN ${timeStr}`;
-        if (state.hasAffordableUpgrades) {
-          finalStr += ' <span style="color:#e27e5d; font-size: 0.8em;">[LOWER TIERS READY]</span>';
+        if (state.affordableTargets && state.affordableTargets.length > 0) {
+          const others = state.affordableTargets.filter(t => t !== bestTarget);
+          if (others.length > 0) {
+            finalStr += ` <span style="color:#e27e5d; font-size: 0.8em;">[+ ${others.join(', ')} READY]</span>`;
+          }
         }
       } else {
         finalStr = `BUY ${bestTarget} NOW`;

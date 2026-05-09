@@ -32,6 +32,7 @@ function formatTime(ticks) {
 function formatDelta(delta) {
   if (delta === undefined || delta === null || Number.isNaN(delta)) return '<span class="neutral-delta">--</span>';
   if (delta === -999) return '<span class="neutral-delta">Filtered</span>';
+  if (delta < -999) return '<span class="negative-delta">< -999%</span>';
   const val = delta.toFixed(2);
   if (delta > 0) return `<span class="positive-delta">+${val}%</span>`;
   if (delta < 0) return `<span class="negative-delta">${val}%</span>`;

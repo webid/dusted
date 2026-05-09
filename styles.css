@@ -89,13 +89,21 @@ h2 {
 }
 
 .grid-header { 
-  display: flex; 
-  justify-content: space-between; 
+  display: grid; 
+  grid-template-columns: 1fr 1fr 1fr;
   padding: 0 4px; 
   font-size: 0.7em; 
   color: #516079; 
   text-transform: uppercase;
   letter-spacing: 1px;
+}
+
+.grid-header span:nth-child(2), .grid-row span:nth-child(2) {
+  text-align: right;
+}
+
+.grid-header span:nth-child(3), .grid-row span:nth-child(3) {
+  text-align: right;
 }
 
 .grid-container { 
@@ -105,8 +113,8 @@ h2 {
 }
 
 .grid-row { 
-  display: flex; 
-  justify-content: space-between; 
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
   background: #10141d; 
   padding: 6px 8px; 
   border-radius: 2px; 

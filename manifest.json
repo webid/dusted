@@ -3,6 +3,9 @@
   "name": "Dusted: Dust Protocol Optimizer",
   "version": "1.0",
   "description": "Automate 'Dust Protocol' on Etherlink Shadownet using the Shredder strategy.",
+  "icons": {
+    "128": "icon128.png"
+  },
   "permissions": [
     "sidePanel",
     "activeTab",

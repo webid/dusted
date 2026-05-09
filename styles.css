@@ -15,6 +15,24 @@ body {
   gap: 10px; 
 }
 
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+@media (min-width: 500px) {
+  .dashboard-grid {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .dashboard-grid .col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+}
+
 h1 { 
   color: #48bbea;
   margin: 0 0 4px 0; 

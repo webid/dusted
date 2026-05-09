@@ -120,6 +120,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     document.getElementById('ticks-this-run').textContent = (state.ticksThisRun || 0).toLocaleString();
     document.getElementById('active-ticks').textContent = (state.activeTicks || 0).toLocaleString();
     document.getElementById('tc-start').textContent = (state.tcStart || 0).toLocaleString();
+    
+    // TC Eff Remaining
+    const tcRemEl = document.getElementById('tc-eff-remaining');
+    const remainingTc = (state.tcStart || 0) - (state.activeTicks || 0);
+    if (remainingTc > 0) {
+      tcRemEl.textContent = formatTime(remainingTc);
+      tcRemEl.style.color = "#516079";
+    } else {
+      tcRemEl.textContent = `[ACTIVE]`;
+      tcRemEl.style.color = "#65b086";
+    }
+
     document.getElementById('softcap-limit').textContent = (state.softcap || 30760).toLocaleString();
 
     // Update recommendation
@@ -132,12 +144,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       recEl.textContent = state.recommendation;
       recEl.style.color = "#e27e5d";
     } else if (state.recommendation.includes("Target Acquisition")) {
-      const waitStr = state.bestPurchaseWait > 0 ? formatTime(state.bestPurchaseWait) : "[BUY NOW]";
-      let finalStr = `${state.recommendation} ${waitStr}`;
-      if (state.bestPurchaseWait > 0 && state.hasAffordableUpgrades) {
-        finalStr += " [AFFORDABLE TARGETS READY]";
+      const bestTarget = state.recommendation.replace("Target Acquisition: ", "");
+      let finalStr = "";
+      if (state.bestPurchaseWait > 0) {
+        const timeStr = formatTime(state.bestPurchaseWait).replace(/[()~]/g, '').trim();
+        finalStr = `BUY ${bestTarget} IN ${timeStr}`;
+        if (state.hasAffordableUpgrades) {
+          finalStr += ' <span style="color:#e27e5d; font-size: 0.8em;">[LOWER TIERS READY]</span>';
+        }
+      } else {
+        finalStr = `BUY ${bestTarget} NOW`;
       }
-      recEl.textContent = finalStr;
+      recEl.innerHTML = finalStr;
       recEl.style.color = "#48bbea";
     } else {
       recEl.textContent = state.recommendation;

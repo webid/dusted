@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Dusted: Dust Protocol Optimizer",
+  "version": "1.0",
+  "description": "Automate 'Dust Protocol' on Etherlink Shadownet using the Shredder strategy.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://dustprotocol.pages.dev/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open Dust Optimizer"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://dustprotocol.pages.dev/*"
+      ],
+      "js": [
+        "break_infinity.js",
+        "content.js"
+      ]
+    }
+  ]
+}

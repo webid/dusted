@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dust Protocol HUD</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Intelligence HUD</h1>
+    
+    <div class="stat-box primary-kpi">
+      <h2>Time to Floor (e308)</h2>
+      <div id="time-to-floor" class="big-number">--</div>
+      <div class="sub-text">Active Ticks Remaining</div>
+      
+      <div class="progress-container">
+        <div id="softcap-bar" class="progress-bar"></div>
+      </div>
+      <div class="sub-text" id="softcap-text">Ticks to Softcap: -- / --</div>
+    </div>
+
+    <div class="stat-box">
+      <p><strong>Dust:</strong> <span id="dust">0</span></p>
+      <p><strong>Dust/Tick ($P_t$):</strong> <span id="dust-per-tick">0</span></p>
+      <p><strong>Current Motes:</strong> <span id="motes">0</span></p>
+      <div class="input-row">
+        <strong>Target Motes:</strong> 
+        <input type="number" id="target-motes" value="40000000" class="hud-input">
+      </div>
+    </div>
+
+    <div class="stat-box highlight-kpi">
+      <h2>Recommendation Engine</h2>
+      <div id="recommendation">Analyzing Path...</div>
+    </div>
+    
+    <h2>Condenser Grid</h2>
+    <div class="grid-header">
+      <span>Tier</span><span style="text-align: right;">Cost</span><span style="text-align: right;">Efficiency Δ</span>
+    </div>
+    <div id="grid-status" class="grid-container">
+      <!-- Grid rows -->
+    </div>
+    
+    <h2>Temporal Compressions</h2>
+    <div class="stat-box tc-box">
+      <p><strong>Count:</strong> <span id="compressions">0</span></p>
+      <p><strong>Next Cost:</strong> <span id="next-tc-cost">0</span></p>
+      <p><strong>Efficiency Δ:</strong> <span id="tc-delta">0%</span></p>
+    </div>
+  </div>
+  <script src="break_infinity.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

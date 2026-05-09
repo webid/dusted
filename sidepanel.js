@@ -24,9 +24,11 @@ function formatTime(ticks) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  if (h > 0) return `(~${h}h ${m}m ${s}s)`;
-  if (m > 0) return `(~${m}m ${s}s)`;
-  return `(~${s}s)`;
+  const unit = (u) => `<span style="text-transform: lowercase; font-size: 0.9em; opacity: 0.7; margin-left: 1px;">${u}</span>`;
+  
+  if (h > 0) return `(~${h}${unit('h')} ${m}${unit('m')} ${s}${unit('s')})`;
+  if (m > 0) return `(~${m}${unit('m')} ${s}${unit('s')})`;
+  return `(~${s}${unit('s')})`;
 }
 
 function formatDelta(delta) {
@@ -97,8 +99,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Update KPI: Time to Floor
     const ttf = Math.floor(state.timeToFloor);
     document.getElementById('time-to-floor').textContent = ttf > 0 ? ttf.toLocaleString() : "0";
-    document.getElementById('time-estimate').textContent = ttf > 0 ? formatTime(ttf) : "";
-
+    document.getElementById('time-estimate').innerHTML = ttf > 0 ? formatTime(ttf) : "";
     const softcap = state.softcap || 30760;
     const progress = Math.min(100, (state.activeTicks / softcap) * 100);
     document.getElementById('softcap-bar').style.width = `${progress}%`;
@@ -125,7 +126,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tcRemEl = document.getElementById('tc-eff-remaining');
     const remainingTc = (state.tcStart || 0) - (state.activeTicks || 0);
     if (remainingTc > 0) {
-      tcRemEl.textContent = formatTime(remainingTc);
+      tcRemEl.innerHTML = formatTime(remainingTc);
       tcRemEl.style.color = "#516079";
     } else {
       tcRemEl.textContent = `[ACTIVE]`;

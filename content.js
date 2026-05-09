@@ -302,7 +302,7 @@ const intervalId = setInterval(() => {
       motes: SHREDDER_STATE.motes,
       pendingMotes: SHREDDER_STATE.pendingMotes,
       totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
-      needsCRScan: effectiveDust.gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
+      needsCRScan: SHREDDER_STATE.dust.add(SHREDDER_STATE.unclaimedDust).gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
       cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
       hasScannedTC: SHREDDER_STATE.hasScannedTC,
       hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,

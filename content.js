@@ -31,7 +31,7 @@ function parseSciNum(text) {
   if (!text) return new Decimal(0);
   const match = text.match(/([0-9.]+)(?:e\+?(-?[0-9]+))?/i);
   if (!match) return new Decimal(0);
-  return new Decimal(match[0]);
+  return new Decimal(match[0].toLowerCase());
 }
 
 // Feature #1: Softcap-aware floor calculation

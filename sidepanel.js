@@ -164,7 +164,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const others = state.affordableTargets ? state.affordableTargets.filter(t => t !== bestTarget) : [];
       const othersHtml = others.length > 0 ? `<div style="color:#e27e5d; font-size: 0.85em; margin-top: 4px; font-weight: normal; text-transform: none; letter-spacing: 0;">[+ ${others.join(', ')} READY]</div>` : '';
       
-      if (state.bestPurchaseWait > 0) {
+      if (state.bestPurchaseWait > 3) {
         const timeStr = formatTime(state.bestPurchaseWait).replace(/[()~]/g, '').trim();
         finalStr = `
           <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
@@ -198,6 +198,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           </div>
         `;
       }
+
+      // Feature #3: Append chain suggestion below primary recommendation
+      if (state.chainSequence) {
+        const chain = state.chainSequence;
+        const chainSteps = chain.steps.join(' + ');
+        const chainTarget = chain.target;
+        const chainWaitStr = chain.wait > 3 ? formatTime(chain.wait).replace(/[()~]/g, '').trim() : 'NOW';
+        finalStr += `
+          <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.2); font-size: 0.75em; color: #516079; letter-spacing: 0.5px;">
+            <span style="text-transform: uppercase;">Chain:</span>
+            <span style="color: #65b086;">BUY ${chainSteps}</span>
+            <span style="color: #516079;"> → </span>
+            <span style="color: ${chain.wait > 3 ? '#48bbea' : '#65b086'};">${chainWaitStr} BUY ${chainTarget}</span>
+          </div>
+        `;
+      }
+
       recEl.innerHTML = finalStr;
       recEl.style.color = "unset";
     } else {

@@ -103,7 +103,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const softcap = state.softcap || 30760;
     const progress = Math.min(100, (state.activeTicks / softcap) * 100);
     document.getElementById('softcap-bar').style.width = `${progress}%`;
-    document.getElementById('softcap-text').textContent = `Ticks to Softcap: ${state.activeTicks.toLocaleString()} / ${softcap.toLocaleString()}`;
+    document.getElementById('softcap-text').textContent = `Active Ticks: ${state.activeTicks.toLocaleString()} / ${softcap.toLocaleString()} (Softcap)`;
+    const softcapRemainingTicks = Math.max(0, softcap - state.activeTicks);
+    const softcapRemText = document.getElementById('softcap-remaining');
+    if (softcapRemainingTicks > 0) {
+      softcapRemText.innerHTML = `Softcap in: ${softcapRemainingTicks.toLocaleString()} ticks ${formatTime(softcapRemainingTicks)}`;
+      softcapRemText.style.color = "#48bbea";
+    } else {
+      softcapRemText.textContent = `Softcap active. Base production penalized.`;
+      softcapRemText.style.color = "#e27e5d";
+    }
 
     // Update global stats
     document.getElementById('dust').textContent = new Decimal(state.dust).toExponential(3);

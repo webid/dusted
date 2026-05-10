@@ -20,14 +20,15 @@
     <div class="dashboard-grid">
       <div class="col">
         <div class="stat-box primary-kpi">
-          <h2>Time to Floor (e308)</h2>
+          <h2>Ticks to Crystallize (e308)</h2>
           <div id="time-to-floor" class="big-number">--</div>
-          <div class="sub-text">Active Ticks <span id="time-estimate"></span></div>
+          <div class="sub-text">Ticks Remaining <span id="time-estimate"></span></div>
           
-          <div class="progress-container">
+          <div class="progress-container" style="margin-top: 15px;">
             <div id="softcap-bar" class="progress-bar"></div>
           </div>
-          <div class="sub-text" id="softcap-text">Ticks to Softcap: -- / --</div>
+          <div class="sub-text" id="softcap-text">Active Ticks: -- / -- (Softcap)</div>
+          <div class="sub-text" id="softcap-remaining" style="color: #48bbea; margin-top: 4px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 4px;">Softcap in: -- ticks</div>
         </div>
 
         <div class="stat-box highlight-kpi">

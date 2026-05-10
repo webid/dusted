@@ -32,17 +32,23 @@ Since this is a custom-built, unpackaged extension, you will load it into your b
 
 ## 📊 HUD Features
 
-- **Time to Floor (e308):** Real-time countdown tracking exactly how many active ticks remain until you hit the crystallization threshold, derived using the game's native $1.02^t$ natural growth acceleration.
-- **Efficiency $\Delta$ (%):** The backbone of the HUD. Evaluates every single condenser and Temporal Compression based on its raw multiplier impact versus the time ($t_{wait}$) it takes to afford it. 
-  - **<span style="color:#00ff00;">Green</span>**: Optimal purchase. Accelerates your run.
-  - **<span style="color:#ff0000;">Red</span>**: Noob trap. Do not buy; waiting for it is actively slowing you down.
-- **Path Simulation Engine:** Analyzes all Efficiency Deltas every second and highlights the single best tactical move to make next.
-- **The Hard Exit Warning:** The moment you cross $e308$ Dust and $40,000,000$ Motes, the HUD immediately alarms you to crystallise.
+- **Time to Floor (e308):** Softcap-aware countdown tracking exactly how many active ticks remain until you hit the crystallization threshold. Correctly splits the calculation across the softcap boundary — pre-softcap ticks compound at `1.02x`, post-softcap at `1.02^0.5 ≈ 1.00995x`.
+- **Time Saved (%):** The backbone of the HUD. Evaluates every condenser and Temporal Compression based on its raw multiplier impact versus the time it takes to afford it.
+  - **Green**: Optimal purchase. Accelerates your run.
+  - **Red**: Noob trap. Waiting for it is actively slowing you down.
+- **Recommendation Engine:** Analyzes all Time Saved deltas every second and highlights the single best tactical move to make next — with a clock icon and countdown or a checkmark for immediate purchases.
+- **Chain Forecasting:** Below the primary recommendation, the engine simulates buying all affordable upgrades, then re-evaluates the best remaining target. If the chain path is faster, it shows a numbered two-step plan.
+- **Hard Exit Warnings:**
+  - **Target Reached:** When your projected total motes (current + pending) reach your configurable Target Motes, the HUD immediately alarms you to buy max DCs and crystallise.
+  - **Softcap Hit:** When your active ticks cross the softcap threshold and growth is penalized, the HUD triggers the same critical alarm.
+- **Temporal Telemetry:** Tracks ticks this run, active ticks, TC activation threshold, and softcap limit with a live progress bar and countdown.
 
 ## 🔧 File Structure
 
 - `manifest.json`: Configuration for the Chrome Side Panel API.
-- `content.js`: The MutationObserver and math simulation engine running stealthily in the game's background.
+- `content.js`: The DOM parser and strategy simulation engine running in the game tab.
 - `sidepanel.js` & `sidepanel.html`: The UI renderer for the Decision Support System.
-- `styles.css`: The sleek, glassmorphic Cyberpunk styling.
-- `break_infinity.js`: Natively ported from the game's source to ensure no numbers overflow `Infinity`.
+- `styles.css`: Sleek, glassmorphic Cyberpunk styling.
+- `break_infinity.js`: Handles numbers beyond `Number.MAX_VALUE` for the game's exponential growth.
+- `STRATEGY_ENGINE.md`: Knowledge base documenting game mechanics, formulas, and the development roadmap.
+- `IMPLEMENTATION_PLAN.md`: Impact/effort analysis and detailed plans for future features.

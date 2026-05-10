@@ -17,7 +17,8 @@ const SHREDDER_STATE = {
   condensers: [],
   compressions: 0,
   nextTcCost: new Decimal(0),
-  unclaimedDust: new Decimal(0)
+  unclaimedDust: new Decimal(0),
+  hasReachedE308: false  // Persists for the run — once e308 is hit, crystallization is always available
 };
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -35,8 +36,9 @@ function parseSciNum(text) {
 
 // Feature #1: Softcap-aware floor calculation
 // Accounts for growth rate dropping from 1.02 to 1.02^0.5 at the softcap boundary
-function ticksToReachFloor(log10P, currentActiveTicks, softcap) {
-  const logTarget = 308;
+// logTarget: the log10 production level to reach (default 308 for crystallization floor)
+function ticksToReachFloor(log10P, currentActiveTicks, softcap, logTarget) {
+  if (logTarget === undefined) logTarget = 308;
   if (log10P >= logTarget) return 0;
 
   const preRate = Math.log10(1.02);        // ~0.00860 (full compounding)
@@ -50,7 +52,7 @@ function ticksToReachFloor(log10P, currentActiveTicks, softcap) {
   const ticksToSoftcap = softcap - currentActiveTicks;
   const ticksNeededAtFullRate = (logTarget - log10P) / preRate;
 
-  // Can reach e308 before softcap? Use full rate
+  // Can reach target before softcap? Use full rate
   if (ticksNeededAtFullRate <= ticksToSoftcap) {
     return ticksNeededAtFullRate;
   }
@@ -161,6 +163,7 @@ function extractData() {
       SHREDDER_STATE.compressions = "Pending...";
       SHREDDER_STATE.cheapestUpgrade = null;
       SHREDDER_STATE.hasScannedUpgrades = false;
+      SHREDDER_STATE.hasReachedE308 = false; // Reset on crystallization
     }
     SHREDDER_STATE.ticksThisRun = currentTicks;
     SHREDDER_STATE.hasScannedStats = true;
@@ -203,12 +206,33 @@ function evaluateStrategy() {
   const activeTicks = SHREDDER_STATE.activeTicks;
   const softcap = SHREDDER_STATE.softcap;
   let timeToFloor = 0;
+  let maxDustBeforeSoftcap = null;
+  let optimizationTarget = 308; // Default: crystallization floor
   
+  // Latch the e308 flag once effective dust (or max dust) reaches e308
+  if (effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0) {
+    SHREDDER_STATE.hasReachedE308 = true;
+  }
+
   if (P_tick.gt(0)) {
-    // Feature #1: Softcap-aware floor calculation
     const log10_P = P_tick.log10();
-    timeToFloor = ticksToReachFloor(log10_P, activeTicks, softcap);
-    timeToFloor = Math.max(0, timeToFloor);
+
+    if (SHREDDER_STATE.hasReachedE308 && activeTicks < softcap) {
+      // Post-e308, pre-softcap: switch optimization target to natural production ceiling
+      // This is the log10(dust/tick) you'd reach at softcap without buying anything
+      const ticksToSoftcap = softcap - activeTicks;
+      const preRate = Math.log10(1.02);
+      maxDustBeforeSoftcap = log10_P + ticksToSoftcap * preRate;
+      optimizationTarget = maxDustBeforeSoftcap;
+
+      // timeToFloor becomes ticks until softcap (the productive runway)
+      timeToFloor = ticksToSoftcap;
+    } else if (!SHREDDER_STATE.hasReachedE308) {
+      // Pre-e308: normal floor calculation
+      timeToFloor = ticksToReachFloor(log10_P, activeTicks, softcap);
+      timeToFloor = Math.max(0, timeToFloor);
+    }
+    // Post-e308 + post-softcap: timeToFloor stays 0, no meaningful optimization left
   }
 
   // Derived from the Stats Page Carry Effects
@@ -240,25 +264,32 @@ function evaluateStrategy() {
     } else if (P_tick.gt(0)) {
       const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
       c_t_wait = diff.div(P_tick).toNumber();
+      const isAffordable = diff.lte(0);
       
-      // Estimate P_new using the exact carry effect bases
-      const multiplier = MULTIPLIERS[c.tier] || 1.1;
-      const P_new_estimated = P_tick.mul(multiplier);
-      // Feature #1: Account for activeTicks advancing during wait
-      const activeTicksAtPurchase = activeTicks + c_t_wait;
-      const t_floor_after = ticksToReachFloor(P_new_estimated.log10(), activeTicksAtPurchase, softcap);
-      
-      const total_time_if_buy = c_t_wait + t_floor_after;
-      const time_saved = timeToFloor - total_time_if_buy;
-      efficiencyDelta = timeToFloor > 0 ? (time_saved / timeToFloor) * 100 : 0;
-      
-      if (time_saved > maxTimeSaved && time_saved > 0) {
-        maxTimeSaved = time_saved;
-        bestPurchase = c.tier;
-        bestPurchaseWait = c_t_wait;
-      }
-      if (time_saved > 0 && c_t_wait === 0) {
-        affordableTargets.push(c.tier);
+      // Skip purchases whose wait exceeds our productive runway
+      // (they'd push us past softcap before we can even afford them)
+      if (c_t_wait > timeToFloor && timeToFloor > 0 && !isAffordable) {
+        efficiencyDelta = -999;
+      } else {
+        // Estimate P_new using the exact carry effect bases
+        const multiplier = MULTIPLIERS[c.tier] || 1.1;
+        const P_new_estimated = P_tick.mul(multiplier);
+        // Feature #1: Account for activeTicks advancing during wait
+        const activeTicksAtPurchase = activeTicks + c_t_wait;
+        const t_floor_after = ticksToReachFloor(P_new_estimated.log10(), activeTicksAtPurchase, softcap, optimizationTarget);
+        
+        const total_time_if_buy = c_t_wait + t_floor_after;
+        const time_saved = timeToFloor - total_time_if_buy;
+        efficiencyDelta = timeToFloor > 0 ? (time_saved / timeToFloor) * 100 : 0;
+        
+        if (time_saved > maxTimeSaved && time_saved > 0) {
+          maxTimeSaved = time_saved;
+          bestPurchase = c.tier;
+          bestPurchaseWait = c_t_wait;
+        }
+        if (time_saved > 0 && isAffordable) {
+          affordableTargets.push(c.tier);
+        }
       }
     }
 
@@ -276,37 +307,43 @@ function evaluateStrategy() {
   if (SHREDDER_STATE.nextTcCost.gt(0) && P_tick.gt(0)) {
     const diff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(effectiveDust));
     const t_wait = diff.div(P_tick).toNumber();
+    const tcAffordable = diff.lte(0);
     
-    const motePower = Math.max(1, SHREDDER_STATE.motes);
-    const baseMultiplier = 1.0583 * motePower;
-    
-    let multiplierToApply;
-    if (activeTicks > 0) {
-      multiplierToApply = new Decimal(baseMultiplier);
-      if (activeTicks < softcap) {
+    // Skip if wait exceeds productive runway
+    if (t_wait > timeToFloor && timeToFloor > 0 && !tcAffordable) {
+      tc_efficiencyDelta = -999;
+    } else {
+      const motePower = Math.max(1, SHREDDER_STATE.motes);
+      const baseMultiplier = 1.0583 * motePower;
+      
+      let multiplierToApply;
+      if (activeTicks > 0) {
+        multiplierToApply = new Decimal(baseMultiplier);
+        if (activeTicks < softcap) {
+          multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
+        }
+      } else {
+        multiplierToApply = Decimal.pow(baseMultiplier, SHREDDER_STATE.compressions + 1);
         multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
       }
-    } else {
-      multiplierToApply = Decimal.pow(baseMultiplier, SHREDDER_STATE.compressions + 1);
-      multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
-    }
-    
-    const P_new_tc = P_tick.mul(multiplierToApply);
-    // Feature #1: TC purchase grants +100 active ticks (threshold drops)
-    const activeTicksAtTcPurchase = activeTicks + t_wait + 100;
-    const t_floor_after_tc = ticksToReachFloor(P_new_tc.log10(), activeTicksAtTcPurchase, softcap);
-    const total_time_if_buy_tc = t_wait + t_floor_after_tc;
-    const time_saved_tc = timeToFloor - total_time_if_buy_tc;
-    
-    tc_efficiencyDelta = timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
-    
-    if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
-      maxTimeSaved = time_saved_tc;
-      bestPurchase = "TC";
-      bestPurchaseWait = t_wait;
-    }
-    if (time_saved_tc > 0 && t_wait === 0) {
-      affordableTargets.push("TC");
+      
+      const P_new_tc = P_tick.mul(multiplierToApply);
+      // Feature #1: TC purchase grants +100 active ticks (threshold drops)
+      const activeTicksAtTcPurchase = activeTicks + t_wait + 100;
+      const t_floor_after_tc = ticksToReachFloor(P_new_tc.log10(), activeTicksAtTcPurchase, softcap, optimizationTarget);
+      const total_time_if_buy_tc = t_wait + t_floor_after_tc;
+      const time_saved_tc = timeToFloor - total_time_if_buy_tc;
+      
+      tc_efficiencyDelta = timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
+      
+      if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
+        maxTimeSaved = time_saved_tc;
+        bestPurchase = "TC";
+        bestPurchaseWait = t_wait;
+      }
+      if (time_saved_tc > 0 && tcAffordable) {
+        affordableTargets.push("TC");
+      }
     }
   }
 
@@ -343,7 +380,7 @@ function evaluateStrategy() {
 
       if (chainSteps.length > 0) {
         // Recalculate timeToFloor with simulated P_tick
-        const simTimeToFloor = ticksToReachFloor(simP.log10(), simActiveTicks, softcap);
+        const simTimeToFloor = ticksToReachFloor(simP.log10(), simActiveTicks, softcap, optimizationTarget);
 
         // Now evaluate remaining non-affordable upgrades against the boosted state
         let chainBestTarget = null;
@@ -360,7 +397,7 @@ function evaluateStrategy() {
           const multiplier = MULTIPLIERS[c.tier] || 1.1;
           const P_new = simP.mul(multiplier);
           const activeAtPurchase = simActiveTicks + chainWait;
-          const floorAfter = ticksToReachFloor(P_new.log10(), activeAtPurchase, softcap);
+          const floorAfter = ticksToReachFloor(P_new.log10(), activeAtPurchase, softcap, optimizationTarget);
           const totalTime = chainWait + floorAfter;
           const saved = simTimeToFloor - totalTime;
 
@@ -383,7 +420,7 @@ function evaluateStrategy() {
           }
           const P_new_tc = simP.mul(tcMult);
           const tcActiveAfter = simActiveTicks + tcChainWait + 100;
-          const tcFloorAfter = ticksToReachFloor(P_new_tc.log10(), tcActiveAfter, softcap);
+          const tcFloorAfter = ticksToReachFloor(P_new_tc.log10(), tcActiveAfter, softcap, optimizationTarget);
           const tcTotalTime = tcChainWait + tcFloorAfter;
           const tcSaved = simTimeToFloor - tcTotalTime;
           if (tcSaved > chainMaxTimeSaved && tcSaved > 0) {
@@ -420,7 +457,6 @@ function evaluateStrategy() {
   // Hard Exit Rule Simulation
   let recommendation = "Hold Position (Natural Growth)";
   
-  const isPostE308 = effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0;
   const totalMotes = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
   const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = activeTicks >= softcap;
@@ -431,7 +467,7 @@ function evaluateStrategy() {
     recommendation = "CRITICAL: SOFTCAP HIT! BUY MAX DC THEN CRYSTALLISE";
   } else if (bestPurchase && maxTimeSaved > 0) {
     recommendation = `Target Acquisition: ${bestPurchase}`;
-  } else if (isPostE308) {
+  } else if (SHREDDER_STATE.hasReachedE308) {
     recommendation = "Pushing to Target (Monitor CR Tab for Motes)";
   }
 
@@ -442,7 +478,9 @@ function evaluateStrategy() {
     affordableTargets: affordableTargets,
     condensers: evaluatedCondensers,
     tc_efficiencyDelta: tc_efficiencyDelta,
-    chainSequence: chainSequence
+    chainSequence: chainSequence,
+    maxDustBeforeSoftcap: maxDustBeforeSoftcap,
+    hasReachedE308: SHREDDER_STATE.hasReachedE308
   };
 }
 
@@ -459,7 +497,7 @@ const intervalId = setInterval(() => {
       motes: SHREDDER_STATE.motes,
       pendingMotes: SHREDDER_STATE.pendingMotes,
       totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
-      needsCRScan: SHREDDER_STATE.dust.add(SHREDDER_STATE.unclaimedDust).gte(new Decimal("1e308")) && SHREDDER_STATE.pendingMotes === 0,
+      needsCRScan: SHREDDER_STATE.hasReachedE308 && SHREDDER_STATE.pendingMotes === 0,
       cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
       hasScannedTC: SHREDDER_STATE.hasScannedTC,
       hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,

@@ -96,10 +96,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       initBox.style.display = 'none';
     }
 
-    // Update KPI: Time to Floor
+    // Update KPI: Time to Floor / Softcap
     const ttf = Math.floor(state.timeToFloor);
-    document.getElementById('time-to-floor').textContent = ttf > 0 ? ttf.toLocaleString() : "0";
-    document.getElementById('time-estimate').innerHTML = ttf > 0 ? formatTime(ttf) : "";
+    const ttfEl = document.getElementById('time-to-floor');
+    const timeEstEl = document.getElementById('time-estimate');
+    const kpiLabel = document.getElementById('kpi-label');
+    
+    if (state.hasReachedE308) {
+      // Post-e308: show productive runway (ticks to softcap) + crystallize badge
+      if (ttf > 0) {
+        // Pre-softcap: timeToFloor = ticks remaining to softcap
+        kpiLabel.textContent = "Ticks to Softcap";
+        ttfEl.textContent = ttf.toLocaleString();
+        ttfEl.style.color = "#b39ddb";
+        timeEstEl.innerHTML = `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${formatTime(ttf)}<span style="color: #65b086; font-size: 0.85em; border: 1px solid rgba(101,176,134,0.4); padding: 1px 6px; border-radius: 3px; white-space: nowrap;">⬡ CRYSTALLIZE AVAILABLE</span></span>`;
+      } else {
+        // Post-softcap: nothing left to optimize
+        kpiLabel.textContent = "Ticks to Crystallize (e308)";
+        ttfEl.textContent = "0";
+        ttfEl.style.color = "#65b086";
+        timeEstEl.innerHTML = '<span style="color: #65b086; font-size: 0.85em;">CRYSTALLIZE AVAILABLE</span>';
+      }
+    } else {
+      kpiLabel.textContent = "Ticks to Crystallize (e308)";
+      ttfEl.textContent = ttf > 0 ? ttf.toLocaleString() : "0";
+      ttfEl.style.color = ""; // Reset to default
+      timeEstEl.innerHTML = ttf > 0 ? formatTime(ttf) : "";
+    }
+
     const softcap = state.softcap || 30760;
     const progress = Math.min(100, (state.activeTicks / softcap) * 100);
     document.getElementById('softcap-bar').style.width = `${progress}%`;
@@ -107,7 +131,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const softcapRemainingTicks = Math.max(0, softcap - state.activeTicks);
     const softcapRemText = document.getElementById('softcap-remaining');
     if (softcapRemainingTicks > 0) {
-      softcapRemText.innerHTML = `Softcap in: ${softcapRemainingTicks.toLocaleString()} ticks ${formatTime(softcapRemainingTicks)}`;
+      let softcapHtml = `Softcap in: ${softcapRemainingTicks.toLocaleString()} ticks ${formatTime(softcapRemainingTicks)}`;
+      
+      // Show max dust estimate before softcap when post-e308 and pre-softcap
+      if (state.maxDustBeforeSoftcap !== null && state.maxDustBeforeSoftcap !== undefined) {
+        const maxExp = Math.floor(state.maxDustBeforeSoftcap);
+        const maxMantissa = Math.pow(10, state.maxDustBeforeSoftcap - maxExp).toFixed(2);
+        softcapHtml += `<div style="margin-top: 4px; color: #b39ddb; font-size: 0.9em; text-transform: none;">⟫ Max Dust/Tick at softcap: ~${maxMantissa}e${maxExp}</div>`;
+      }
+      
+      softcapRemText.innerHTML = softcapHtml;
       softcapRemText.style.color = "#48bbea";
     } else {
       softcapRemText.textContent = `Softcap active. Base production penalized.`;

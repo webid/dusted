@@ -133,9 +133,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // TC Eff Remaining
     const tcRemEl = document.getElementById('tc-eff-remaining');
-    const remainingTc = (state.tcStart || 0) - (state.activeTicks || 0);
+    let remainingTc = 0;
+    if (state.activeTicks === 0) {
+      remainingTc = Math.max(0, (state.tcStart || 0) - (state.ticksThisRun || 0));
+    }
+    
     if (remainingTc > 0) {
-      tcRemEl.innerHTML = formatTime(remainingTc);
+      tcRemEl.innerHTML = `(in ${formatTime(remainingTc).replace(/[()~]/g, '').trim()})`;
       tcRemEl.style.color = "#516079";
     } else {
       tcRemEl.textContent = `[ACTIVE]`;
@@ -156,20 +160,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (state.recommendation.includes("Target Acquisition")) {
       const bestTarget = state.recommendation.replace("Target Acquisition: ", "");
       let finalStr = "";
+      
+      const others = state.affordableTargets ? state.affordableTargets.filter(t => t !== bestTarget) : [];
+      const othersHtml = others.length > 0 ? `<div style="color:#e27e5d; font-size: 0.85em; margin-top: 4px; font-weight: normal; text-transform: none; letter-spacing: 0;">[+ ${others.join(', ')} READY]</div>` : '';
+      
       if (state.bestPurchaseWait > 0) {
         const timeStr = formatTime(state.bestPurchaseWait).replace(/[()~]/g, '').trim();
-        finalStr = `BUY ${bestTarget} IN ${timeStr}`;
-        if (state.affordableTargets && state.affordableTargets.length > 0) {
-          const others = state.affordableTargets.filter(t => t !== bestTarget);
-          if (others.length > 0) {
-            finalStr += ` <span style="color:#e27e5d; font-size: 0.8em;">[+ ${others.join(', ')} READY]</span>`;
-          }
-        }
+        finalStr = `
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 60px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#48bbea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 4px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span style="font-family: monospace; font-size: 1.1em; font-weight: bold; color: #48bbea;">${timeStr}</span>
+            </div>
+            <div style="display: flex; flex-direction: column; border-left: 1px solid rgba(81, 96, 121, 0.3); padding-left: 12px;">
+              <span style="font-weight: bold; font-size: 1.1em; letter-spacing: 0.5px; color: #48bbea;">BUY ${bestTarget}</span>
+              ${othersHtml}
+            </div>
+          </div>
+        `;
       } else {
-        finalStr = `BUY ${bestTarget} NOW`;
+        finalStr = `
+          <div style="display: flex; align-items: center; gap: 12px; margin-top: 8px;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 60px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#65b086" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 4px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9 12l2 2 4-4"></path>
+              </svg>
+              <span style="font-family: monospace; font-size: 1.1em; font-weight: bold; color: #65b086;">NOW</span>
+            </div>
+            <div style="display: flex; flex-direction: column; border-left: 1px solid rgba(81, 96, 121, 0.3); padding-left: 12px;">
+              <span style="font-weight: bold; font-size: 1.1em; letter-spacing: 0.5px; color: #65b086;">BUY ${bestTarget}</span>
+              ${othersHtml}
+            </div>
+          </div>
+        `;
       }
       recEl.innerHTML = finalStr;
-      recEl.style.color = "#48bbea";
+      recEl.style.color = "unset";
     } else {
       recEl.textContent = state.recommendation;
       recEl.style.color = "#8b9bb4";

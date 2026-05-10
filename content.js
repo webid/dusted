@@ -250,12 +250,21 @@ function evaluateStrategy() {
     const baseMultiplier = 1.0583 * motePower;
     
     let multiplierToApply;
-    if (SHREDDER_STATE.tcStart > 0 && SHREDDER_STATE.activeTicks >= SHREDDER_STATE.tcStart) {
+    if (SHREDDER_STATE.activeTicks > 0) {
       // If the timer has cleared, P_tick already contains the stack. Marginal gain is the base.
       multiplierToApply = new Decimal(baseMultiplier);
+      
+      // Crucial Fix: Buying a TC reduces the threshold by 100, granting 100 extra active ticks!
+      // Before softcap, 100 active ticks compounds at 1.02x per tick.
+      if (SHREDDER_STATE.activeTicks < SHREDDER_STATE.softcap) {
+        multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
+      }
     } else {
       // If timer is not clear, apply Net Present Value by projecting the entire stack
       multiplierToApply = Decimal.pow(baseMultiplier, SHREDDER_STATE.compressions + 1);
+      
+      // It also activates 100 ticks earlier!
+      multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
     }
     
     const P_new_tc = P_tick.mul(multiplierToApply);
@@ -267,7 +276,7 @@ function evaluateStrategy() {
     
     if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
       maxTimeSaved = time_saved_tc;
-      bestPurchase = "Temporal Compression";
+      bestPurchase = "TC";
       bestPurchaseWait = t_wait;
     }
     if (time_saved_tc > 0 && t_wait === 0) {

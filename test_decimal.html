@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="break_infinity.js"></script>
+</head>
+<body>
+  <script>
+    const P = new Decimal("5.857e51");
+    const P2 = P.mul(3);
+    console.log("P log10:", P.log10());
+    console.log("P2 log10:", P2.log10());
+    document.body.innerHTML = P2.log10();
+  </script>
+</body>
+</html>

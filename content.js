@@ -318,7 +318,11 @@ function evaluateStrategy() {
     const affordableDCs = SHREDDER_STATE.condensers
       .filter(c => {
         const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
-        return diff.eq(0) && MULTIPLIERS[c.tier];
+        if (!diff.eq(0) || !MULTIPLIERS[c.tier]) return false;
+        // Apply DC-Spike filter: exclude DC1-DC4 if cost > e100 and cost > P_tick
+        const isDC1_4 = ['DC1', 'DC2', 'DC3', 'DC4'].includes(c.tier);
+        if (isDC1_4 && c.nextCost.gt(new Decimal("1e100")) && c.nextCost.gt(P_tick)) return false;
+        return true;
       })
       .sort((a, b) => (MULTIPLIERS[b.tier] || 0) - (MULTIPLIERS[a.tier] || 0));
 

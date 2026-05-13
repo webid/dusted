@@ -383,21 +383,21 @@ function extractData() {
   if (motesMatch)
     SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ""));
 
-  const activeTicksMatch = fullText.match(
-    /active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i,
-  );
-  if (activeTicksMatch) {
-    SHREDDER_STATE.activeTicks = parseInt(
-      activeTicksMatch[1].replace(/,/g, ""),
-      10,
-    );
-    if (activeTicksMatch[2]) {
-      SHREDDER_STATE.softcap = parseInt(
-        activeTicksMatch[2].replace(/,/g, ""),
-        10,
-      );
-    }
-  }
+  // const activeTicksMatch = fullText.match(
+  //   /active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i,
+  // );
+  // if (activeTicksMatch) {
+  //   SHREDDER_STATE.activeTicks = parseInt(
+  //     activeTicksMatch[1].replace(/,/g, ""),
+  //     10,
+  //   );
+  //   if (activeTicksMatch[2]) {
+  //     SHREDDER_STATE.softcap = parseInt(
+  //       activeTicksMatch[2].replace(/,/g, ""),
+  //       10,
+  //     );
+  //   }
+  // }
 
   // Upgrades parsing
   let cheapestUpgrade = Infinity;
@@ -426,11 +426,11 @@ function extractData() {
   }
 
   // Temporal Compression parsing
-  const compMatch = fullText.match(/compressions\s+(\d+)/i);
-  if (compMatch) {
-    SHREDDER_STATE.compressions = parseInt(compMatch[1], 10);
-    SHREDDER_STATE.hasScannedTC = true;
-  }
+  // const compMatch = fullText.match(/compressions\s+(\d+)/i);
+  // if (compMatch) {
+  //   SHREDDER_STATE.compressions = parseInt(compMatch[1], 10);
+  //   SHREDDER_STATE.hasScannedTC = true;
+  // }
 
   const tcCostMatch = fullText.match(
     /compressions[\s\S]{1,200}?cost\s+([0-9.e+]+)\s+dust/i,
@@ -893,7 +893,7 @@ const intervalId = setInterval(async () => {
     // console.log("[Dusted] chainPlayerAddress", chainPlayerAddress);
     // 2. Fetch chain state every 10s (non-blocking)
     const now = Date.now();
-    if (chainPlayerAddress && now - lastChainFetch > 10000) {
+    if (chainPlayerAddress && now - lastChainFetch > 5000) {
       lastChainFetch = now;
       fetchChainState(chainPlayerAddress)
         .then((cs) => {

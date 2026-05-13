@@ -1,34 +1,40 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="UTF-8">
   <title>Dust Protocol HUD</title>
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <div class="container">
     <h1>Intelligence HUD</h1>
-    
-    <div id="init-checklist" style="font-size: 0.7em; color: #e27e5d; margin-bottom: 2px; display: none; background: rgba(226, 126, 93, 0.05); padding: 8px; border: 1px dashed #e27e5d; border-radius: 2px;">
-      <div style="font-weight:bold; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;">Sensor Alignment Required:</div>
-      <div id="check-tc" style="margin-bottom: 2px;">[-] Calibrating Temporal Matrix... (Visit TC Tab)</div>
+
+    <div id="init-checklist"
+      style="font-size: 0.7em; color: #e27e5d; margin-bottom: 2px; display: none; background: rgba(226, 126, 93, 0.05); padding: 8px; border: 1px dashed #e27e5d; border-radius: 2px;">
+      <div style="font-weight:bold; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px;">Sensor
+        Alignment Required:</div>
+      <!-- <div id="check-tc" style="margin-bottom: 2px;">[-] Calibrating Temporal Matrix... (Visit TC Tab)</div>
       <div id="check-up" style="margin-bottom: 2px;">[-] Calibrating Expansion Trees... (Visit Upgrades Tab)</div>
-      <div id="check-st" style="margin-bottom: 2px;">[-] Calibrating Telemetry... (Visit Stats Tab)</div>
+      <div id="check-st" style="margin-bottom: 2px;">[-] Calibrating Telemetry... (Visit Stats Tab)</div> -->
       <div id="check-cr" style="display: none;"></div>
     </div>
-    
+
     <div class="dashboard-grid">
       <div class="col">
         <div class="stat-box primary-kpi">
           <h2 id="kpi-label">Ticks to Crystallize (e308)</h2>
           <div id="time-to-floor" class="big-number">--</div>
           <div class="sub-text">Ticks Remaining <span id="time-estimate"></span></div>
-          
+
           <div class="progress-container" style="margin-top: 15px;">
             <div id="softcap-bar" class="progress-bar"></div>
           </div>
           <div class="sub-text" id="softcap-text">Active Ticks: -- / -- (Softcap)</div>
-          <div class="sub-text" id="softcap-remaining" style="color: #48bbea; margin-top: 4px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 4px;">Softcap in: -- ticks</div>
+          <div class="sub-text" id="softcap-remaining"
+            style="color: #48bbea; margin-top: 4px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 4px;">
+            Softcap in: -- ticks</div>
         </div>
 
         <div class="stat-box highlight-kpi">
@@ -40,24 +46,35 @@
         <div class="stat-box tc-box">
           <p><strong>Count:</strong> <span id="compressions">0</span></p>
           <p><strong>Next Cost:</strong> <span id="next-tc-cost">0</span></p>
-          <p><strong title="Percentage of total grinding time saved if you wait to buy this compression." style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved:</strong> <span id="tc-delta">0%</span></p>
+          <p><strong title="Percentage of total grinding time saved if you wait to buy this compression."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved:</strong> <span id="tc-delta">0%</span>
+          </p>
         </div>
       </div>
 
       <div class="col">
         <div class="stat-box">
           <p><strong>Dust:</strong> <span id="dust">0</span></p>
-          <p><strong title="Current production velocity per tick." style="cursor:help; border-bottom: 1px dashed #516079;">Dust/Tick:</strong> <span id="dust-per-tick">0</span></p>
+          <p><strong title="Current production velocity per tick."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Dust/Tick:</strong> <span
+              id="dust-per-tick">0</span></p>
           <p><strong>Current Motes:</strong> <span id="motes">0</span></p>
-          <p><strong title="Motes to be gained upon crystallisation." style="cursor:help; border-bottom: 1px dashed #516079;">Pending Motes:</strong> <span id="pending-motes">0</span></p>
-          <p><strong title="Total motes you will have after resetting." style="cursor:help; border-bottom: 1px dashed #516079;">Projected Total:</strong> <span id="total-motes" style="color: #65b086;">0</span></p>
+          <p><strong title="Motes to be gained upon crystallisation."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Pending Motes:</strong> <span
+              id="pending-motes">0</span></p>
+          <p><strong title="Total motes you will have after resetting."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Projected Total:</strong> <span id="total-motes"
+              style="color: #65b086;">0</span></p>
           <div class="input-row">
-            <strong>Target Motes:</strong> 
-            <input type="number" id="target-motes" value="40" class="hud-input">
+            <strong>Target Motes:</strong>
+            <input type="number" id="target-motes" value="0" class="hud-input">
           </div>
-          <div id="cheapest-upgrade-container" style="display:none; text-align:right; font-size: 0.75em; margin-top: 6px;">
-            <span style="color: #516079;" title="The lowest upgrade cost detected on the Upgrades tab.">Detected Cost: </span>
-            <a href="#" id="cheapest-upgrade-link" style="color: #48bbea; text-decoration: none; border-bottom: 1px dashed #48bbea;">40</a>
+          <div id="cheapest-upgrade-container"
+            style="display:none; text-align:right; font-size: 0.75em; margin-top: 6px;">
+            <span style="color: #516079;" title="The lowest upgrade cost detected on the Upgrades tab.">Detected Cost:
+            </span>
+            <a href="#" id="cheapest-upgrade-link"
+              style="color: #48bbea; text-decoration: none; border-bottom: 1px dashed #48bbea;">40</a>
           </div>
         </div>
 
@@ -65,22 +82,30 @@
         <div class="stat-box">
           <p><strong>Ticks This Run:</strong> <span id="ticks-this-run">0</span></p>
           <p><strong>Active Ticks:</strong> <span id="active-ticks">0</span></p>
-          <p><strong title="Ticks required before Temporal Compression efficiency begins scaling." style="cursor:help; border-bottom: 1px dashed #516079;">TC Eff. Start:</strong> <span><span id="tc-start">0</span> <span id="tc-eff-remaining" style="font-size: 0.85em; margin-left: 4px;"></span></span></p>
-          <p><strong title="Threshold where exponential growth heavily decays." style="cursor:help; border-bottom: 1px dashed #516079;">Softcap Limit:</strong> <span id="softcap-limit">0</span></p>
+          <p><strong title="Ticks required before Temporal Compression efficiency begins scaling."
+              style="cursor:help; border-bottom: 1px dashed #516079;">TC Eff. Start:</strong> <span><span
+                id="tc-start">0</span> <span id="tc-eff-remaining"
+                style="font-size: 0.85em; margin-left: 4px;"></span></span></p>
+          <p><strong title="Threshold where exponential growth heavily decays."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Softcap Limit:</strong> <span
+              id="softcap-limit">0</span></p>
         </div>
       </div>
     </div>
-    
+
     <h2>Condenser Grid</h2>
     <div class="grid-header">
-      <span>Tier</span><span style="text-align: right;">Cost</span><span style="text-align: right;"><span title="Percentage of total grinding time saved if you wait to buy this upgrade." style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved</span></span>
+      <span>Tier</span><span style="text-align: right;">Cost</span><span style="text-align: right;"><span
+          title="Percentage of total grinding time saved if you wait to buy this upgrade."
+          style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved</span></span>
     </div>
     <div id="grid-status" class="grid-container">
       <!-- Grid rows -->
     </div>
-    
+
   </div>
   <script src="break_infinity.js"></script>
   <script src="sidepanel.js"></script>
 </body>
+
 </html>

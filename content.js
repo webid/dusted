@@ -16,7 +16,7 @@ var SHREDDER_STATE = {
   dust: D ? new D(0) : null,
   dustPerTick: D ? new D(0) : null,
   activeTicks: 0,
-  softcap: 30760,
+  softcap: 30000,
   motes: 0,
   pendingMotes: 0,
   targetMotes: 75,
@@ -218,7 +218,10 @@ async function fetchChainState(playerAddress) {
     nextTcCost: compCost,
     crystallisations: crys,
     hasReachedE308,
-    condensers,
+    condensers:
+      SHREDDER_STATE.condensers.length > 0
+        ? SHREDDER_STATE.condensers
+        : condensers, // Only override if we don't have any data
     carryK,
     dcPurchases,
     dcCarried,
@@ -228,8 +231,6 @@ async function fetchChainState(playerAddress) {
     hasScannedUpgrades: condensers.length > 0,
   };
 }
-
-// if (dust) console.table("WZZ", dust, dustPerTick);
 
 /** Address of the currently connected wallet — populated once we find it in the DOM. */
 let chainPlayerAddress = null;
@@ -255,9 +256,11 @@ function applyChainState(cs) {
   if (!cs) return;
   // Only overwrite dust/dustPerTick if chain values are non-zero
   // (DOM still provides finer-grained unclaimed-dust tracking)
-  if (cs.dust && cs.dust.gt(0)) SHREDDER_STATE.dust = cs.dust;
-  if (cs.dustPerTick && cs.dustPerTick.gt(0))
-    SHREDDER_STATE.dustPerTick = cs.dustPerTick;
+
+  // if (cs.dust && cs.dust.gt(0)) SHREDDER_STATE.dust = cs.dust;
+
+  // if (cs.dustPerTick && cs.dustPerTick.gt(0))
+  //   SHREDDER_STATE.dustPerTick = cs.dustPerTick;
   SHREDDER_STATE.motes = cs.motes;
 
   // Extract current block from DOM
@@ -364,10 +367,14 @@ function extractData() {
 
   const dustTickEl = document.querySelector("span.oran");
   if (dustTickEl) {
+    // console.log("setting dust/tick from span.oran:", dustTickEl.textContent);
     SHREDDER_STATE.dustPerTick = parseSciNum(dustTickEl.textContent);
   } else {
     const dtMatch = fullText.match(/dust \/ tick\s+([0-9.e+]+)/i);
-    if (dtMatch) SHREDDER_STATE.dustPerTick = parseSciNum(dtMatch[1]);
+    if (dtMatch) {
+      // console.log("setting dust/tick from raw text:", dtMatch[1]);
+      SHREDDER_STATE.dustPerTick = parseSciNum(dtMatch[1]);
+    }
   }
 
   // Parse unclaimed production
@@ -379,9 +386,9 @@ function extractData() {
   }
 
   // Motes & Active Ticks via raw text to ignore arbitrary HTML nesting
-  const motesMatch = fullText.match(/motes\s+~?([\d,.]+)/i);
-  if (motesMatch)
-    SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ""));
+  // const motesMatch = fullText.match(/motes\s+~?([\d,.]+)/i);
+  // if (motesMatch)
+  //   SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ""));
 
   // const activeTicksMatch = fullText.match(
   //   /active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i,
@@ -670,8 +677,9 @@ function evaluateStrategy() {
       }
 
       const P_new_tc = P_tick.mul(multiplierToApply);
-      // Feature #1: TC purchase grants +100 active ticks (threshold drops)
-      const activeTicksAtTcPurchase = activeTicks + t_wait + 100;
+      // Feature #1: TC purchase grants +100 active ticks (threshold drops) <- THIS IS DUMB
+      // const activeTicksAtTcPurchase = activeTicks + t_wait + 100;
+      const activeTicksAtTcPurchase = activeTicks;
       const t_floor_after_tc = ticksToReachFloor(
         P_new_tc.log10(),
         activeTicksAtTcPurchase,
@@ -680,6 +688,12 @@ function evaluateStrategy() {
       );
       const total_time_if_buy_tc = t_wait + t_floor_after_tc;
       const time_saved_tc = timeToFloor - total_time_if_buy_tc;
+      // console.log(
+      //   "Time to floor if buy TC:",
+      //   total_time_if_buy_tc,
+      //   "Time saved:",
+      //   time_saved_tc,
+      // );
 
       tc_efficiencyDelta =
         timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
@@ -837,7 +851,7 @@ function evaluateStrategy() {
   const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = activeTicks >= softcap;
 
-  if (hasTargetMotes) {
+  if (hasTargetMotes && SHREDDER_STATE.targetMotes > 0) {
     recommendation = "CRITICAL: TARGET REACHED! BUY MAX DC THEN CRYSTALLISE";
   } else if (hitSoftcap) {
     recommendation = "CRITICAL: SOFTCAP HIT! BUY MAX DC THEN CRYSTALLISE";
@@ -893,7 +907,7 @@ const intervalId = setInterval(async () => {
     // console.log("[Dusted] chainPlayerAddress", chainPlayerAddress);
     // 2. Fetch chain state every 10s (non-blocking)
     const now = Date.now();
-    if (chainPlayerAddress && now - lastChainFetch > 5000) {
+    if (chainPlayerAddress && now - lastChainFetch > 2000) {
       lastChainFetch = now;
       fetchChainState(chainPlayerAddress)
         .then((cs) => {

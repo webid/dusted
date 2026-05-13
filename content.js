@@ -1,10 +1,15 @@
 // -- VIEW Contract (chain-direct data source) ---------------------------------
-const CHAIN_RPC   = "https://node.shadownet.etherlink.com";
-const VIEW_ADDR   = "0x9aB01b7b864c255Af5c8BD5C0f26D6bE0d8201F6";
-const CORE_ADDR   = "0x098ebA92E5a634A3be967E6891F905E2ABe89059";
+const CHAIN_RPC = "https://node.shadownet.etherlink.com";
+const VIEW_ADDR = "0x9aB01b7b864c255Af5c8BD5C0f26D6bE0d8201F6";
+const CORE_ADDR = "0x098ebA92E5a634A3be967E6891F905E2ABe89059";
 
 // Ensure Decimal is available from break_infinity.js
-const D = (typeof Decimal !== 'undefined') ? Decimal : (typeof window !== 'undefined' ? window.Decimal : null);
+const D =
+  typeof Decimal !== "undefined"
+    ? Decimal
+    : typeof window !== "undefined"
+      ? window.Decimal
+      : null;
 if (!D) console.error("Dusted: Decimal library (break_infinity.js) not found!");
 
 var SHREDDER_STATE = {
@@ -14,13 +19,13 @@ var SHREDDER_STATE = {
   softcap: 30760,
   motes: 0,
   pendingMotes: 0,
-  targetMotes: 40,
+  targetMotes: 75,
   cheapestUpgrade: null,
   hasScannedTC: false,
   hasScannedUpgrades: false,
   hasScannedStats: false,
   ticksThisRun: 0,
-  tcStart: 6200,
+  tcStart: 10000,
   condensers: [],
   compressions: 0,
   nextTcCost: D ? new D(0) : null,
@@ -28,26 +33,28 @@ var SHREDDER_STATE = {
   hasReachedE308: false,
   _prevChainTicks: 0,
   _justReset: false,
+  currentBlock: 0,
+  lastUpdateBlock: 0,
+  chainTicksThisRun: 0,
 };
 
 // keccak256 selectors (verified via `cast sig`)
-const SEL_GET_PLAYER    = "0x5c12cd4b"; // getPlayer(address)
+const SEL_GET_PLAYER = "0x5c12cd4b"; // getPlayer(address)
 const SEL_DUST_PER_TICK = "0xbd859b08"; // dustPerTick(address)
-const SEL_COMP_COST     = "0x62f2db0e"; // compressionCost(address)
-const SEL_TICK_PARAMS   = "0x6b7582c4"; // getTickSpeedParams()
+const SEL_COMP_COST = "0x62f2db0e"; // compressionCost(address)
+const SEL_TICK_PARAMS = "0x6b7582c4"; // getTickSpeedParams()
 const SEL_CARRY_GLOBALS = "0x1606b060"; // getCarryGlobals()
-const SEL_ACTION_FEE    = "0x1441d227"; // actionFee()
+const SEL_ACTION_FEE = "0x1441d227"; // actionFee()
 const SEL_BLOCKS_PER_TICK = "0x4c0b305b"; // blocksPerTick()
-
 
 /** Zero-pad a hex value to 32 bytes (64 hex chars). */
 function pad32(hex) {
-  return hex.replace('0x', '').padStart(64, '0');
+  return hex.replace("0x", "").padStart(64, "0");
 }
 
 /** ABI-encode a single address argument. */
 function encodeAddr(addr) {
-  return pad32(addr.toLowerCase().replace('0x', ''));
+  return pad32(addr.toLowerCase().replace("0x", ""));
 }
 
 /** Decode a uint256 from a 32-byte ABI word at offset (in hex string, no 0x). */
@@ -59,11 +66,11 @@ function decodeUint(hex, wordOffset) {
 /** Decode a FloatNum struct {mantissa(uint128), exponent(int64), negative(bool)}
  *  from ABI-encoded output at wordOffset. Each field occupies one 32-byte word. */
 function decodeFloat(hex, wordOffset) {
-  const m = decodeUint(hex, wordOffset);       // uint128 mantissa (scaled by 1e18)
+  const m = decodeUint(hex, wordOffset); // uint128 mantissa (scaled by 1e18)
   const eRaw = decodeUint(hex, wordOffset + 1); // int64 exponent (may be negative)
-  const neg  = decodeUint(hex, wordOffset + 2); // bool negative
+  const neg = decodeUint(hex, wordOffset + 2); // bool negative
   // Convert int64: if top bit set → negative
-  const e = eRaw > 0x7FFFFFFFFFFFFFFF ? eRaw - 0x10000000000000000 : eRaw;
+  const e = eRaw > 0x7fffffffffffffff ? eRaw - 0x10000000000000000 : eRaw;
   // mantissa is stored * 1e18 as a uint128
   const mantissaF = m / 1e18;
   const val = new Decimal(`${mantissaF}e${e}`);
@@ -73,15 +80,19 @@ function decodeFloat(hex, wordOffset) {
 /** Raw eth_call via fetch. Returns hex result string (no 0x). */
 async function ethCall(to, data) {
   const body = JSON.stringify({
-    jsonrpc: "2.0", id: 1, method: "eth_call",
-    params: [{ to, data }, "latest"]
+    jsonrpc: "2.0",
+    id: 1,
+    method: "eth_call",
+    params: [{ to, data }, "latest"],
   });
   const res = await fetch(CHAIN_RPC, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body
+    body,
   });
   const json = await res.json();
+  // console.log(json);
+  // if (json.error) console.log(data);
   if (json.error) throw new Error(json.error.message);
   return (json.result || "0x").slice(2); // strip 0x
 }
@@ -92,13 +103,15 @@ async function fetchChainState(playerAddress) {
 
   // VIEW contract: player-specific data
   // CORE contract: global params (getTickSpeedParams, getCarryGlobals, blocksPerTick)
-  const [playerHex, dptHex, tickHex, carryHex] = await Promise.all([
-    ethCall(VIEW_ADDR, SEL_GET_PLAYER    + addrHex),
-    ethCall(VIEW_ADDR, SEL_DUST_PER_TICK + addrHex),
-    ethCall(CORE_ADDR, SEL_TICK_PARAMS),
-    ethCall(CORE_ADDR, SEL_CARRY_GLOBALS),
-  ]);
-
+  const [playerHex, dptHex, tickHex, carryHex, compCostHex] = await Promise.all(
+    [
+      ethCall(CORE_ADDR, SEL_GET_PLAYER + addrHex),
+      ethCall(VIEW_ADDR, SEL_DUST_PER_TICK + addrHex),
+      ethCall(CORE_ADDR, SEL_TICK_PARAMS),
+      ethCall(CORE_ADDR, SEL_CARRY_GLOBALS),
+      ethCall(CORE_ADDR, SEL_COMP_COST + addrHex),
+    ],
+  );
 
   // ── getPlayer layout (each field = one or more 32-byte words) ────────────
   // Field order from ABI:
@@ -133,14 +146,16 @@ async function fetchChainState(playerAddress) {
   //  [93]    psTickSpeedSoftcapMin (uint32)
   //  [94]    psTickSpeedSoftcapGrowth (uint32)
 
-  const dust      = decodeFloat(playerHex, 0);
-  const motes     = decodeFloat(playerHex, 6);
-  const crys      = decodeUint(playerHex, 65);
-  const comprP    = decodeUint(playerHex, 69);
-  const ticksRun  = decodeUint(playerHex, 75);
-  const psStart   = decodeUint(playerHex, 78);
+  const dust = decodeFloat(playerHex, 0);
+  const motes = decodeFloat(playerHex, 6);
+  const crys = decodeUint(playerHex, 65);
+  const comprP = decodeUint(playerHex, 69);
+  const lastUpdateBlock = decodeUint(playerHex, 68);
+  const ticksRun = decodeUint(playerHex, 75);
+  const psStart = decodeUint(playerHex, 78);
   const psSoftcap = decodeUint(playerHex, 79);
   const allTimeMax = decodeFloat(playerHex, 81);
+  const roundMax = decodeFloat(playerHex, 3);
 
   // dcAmounts[0..7] start at word 15, each FloatNum = 3 words
   const dcAmounts = [];
@@ -161,6 +176,9 @@ async function fetchChainState(playerAddress) {
   // ── dustPerTick (3-word FloatNum) ─────────────────────────────────────────
   const dpt = decodeFloat(dptHex, 0);
 
+  // ── compressionCost (3-word FloatNum) ─────────────────────────────────────
+  const compCost = decodeFloat(compCostHex, 0);
+
   // ── getTickSpeedParams → (rate, start, softcap, power, lastParamChange) ──
   const globalSoftcap = decodeUint(tickHex, 2);
 
@@ -168,8 +186,8 @@ async function fetchChainState(playerAddress) {
   const carryK = decodeUint(carryHex, 3);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const softcap   = psSoftcap || globalSoftcap || SHREDDER_STATE.softcap;
-  const tcStart   = psStart   || SHREDDER_STATE.tcStart;
+  const softcap = psSoftcap || globalSoftcap || SHREDDER_STATE.softcap;
+  const tcStart = psStart || SHREDDER_STATE.tcStart;
   const activeTicks = Math.max(0, ticksRun - tcStart);
 
   // hasReachedE308: correct derivation — no sticky latch needed
@@ -177,25 +195,27 @@ async function fetchChainState(playerAddress) {
   // After crystallization, crys increments but dust resets — we can safely
   // check dust directly each cycle.
   const hasReachedE308 =
-    dust.gte(new Decimal("1e308")) ||
-    allTimeMax.gte(new Decimal("1e308"));
+    // dust.gte(new Decimal("1e308")) || allTimeMax.gte(new Decimal("1e308"));
+    dust.gte(new Decimal("1e308")) || roundMax.gte(new Decimal("1e308"));
 
   // Build condenser objects compatible with evaluateStrategy()
   const condensers = dcAmounts.map((amt, i) => ({
-    tier:     `DC${i + 1}`,
-    amount:   amt,
-    nextCost: amt,   // dcAmounts[i] IS the next purchase cost
+    tier: `DC${i + 1}`,
+    amount: amt,
+    nextCost: amt, // dcAmounts[i] IS the next purchase cost
   }));
 
   return {
     dust,
-    dustPerTick:    dpt,
-    motes:          motes.toNumber(),
-    ticksThisRun:   ticksRun,
+    dustPerTick: dpt,
+    motes: motes.toNumber(),
+    ticksThisRun: ticksRun,
+    lastUpdateBlock: lastUpdateBlock,
     activeTicks,
     softcap,
     tcStart,
-    compressions:   comprP,
+    compressions: comprP,
+    nextTcCost: compCost,
     crystallisations: crys,
     hasReachedE308,
     condensers,
@@ -203,11 +223,13 @@ async function fetchChainState(playerAddress) {
     dcPurchases,
     dcCarried,
     // These are now always satisfied from chain data:
-    hasScannedTC:       true,
-    hasScannedStats:    true,
+    hasScannedTC: true,
+    hasScannedStats: true,
     hasScannedUpgrades: condensers.length > 0,
   };
 }
+
+// if (dust) console.table("WZZ", dust, dustPerTick);
 
 /** Address of the currently connected wallet — populated once we find it in the DOM. */
 let chainPlayerAddress = null;
@@ -215,42 +237,78 @@ let chainPlayerAddress = null;
 /** Last time we fetched from chain (ms). */
 let lastChainFetch = 0;
 
+/** Extract current block number from DOM header. Returns 0 if not found. */
+function extractCurrentBlock() {
+  const headerRight = document.querySelector(".site-header-right");
+  if (!headerRight) return 0;
+  const cyanSpan = headerRight.querySelector(".cyan");
+  if (cyanSpan) {
+    const blockText = cyanSpan.textContent.trim();
+    const blockNum = parseInt(blockText.replace(/,/g, ""), 10);
+    return isNaN(blockNum) ? 0 : blockNum;
+  }
+  return 0;
+}
+
 /** Merge a chainState object into SHREDDER_STATE. */
 function applyChainState(cs) {
   if (!cs) return;
   // Only overwrite dust/dustPerTick if chain values are non-zero
   // (DOM still provides finer-grained unclaimed-dust tracking)
-  if (cs.dust && cs.dust.gt(0))        SHREDDER_STATE.dust        = cs.dust;
-  if (cs.dustPerTick && cs.dustPerTick.gt(0)) SHREDDER_STATE.dustPerTick = cs.dustPerTick;
-  SHREDDER_STATE.motes        = cs.motes;
-  SHREDDER_STATE.ticksThisRun = cs.ticksThisRun;
-  SHREDDER_STATE.activeTicks  = cs.activeTicks;
-  SHREDDER_STATE.softcap      = cs.softcap;
-  SHREDDER_STATE.tcStart      = cs.tcStart;
+  if (cs.dust && cs.dust.gt(0)) SHREDDER_STATE.dust = cs.dust;
+  if (cs.dustPerTick && cs.dustPerTick.gt(0))
+    SHREDDER_STATE.dustPerTick = cs.dustPerTick;
+  SHREDDER_STATE.motes = cs.motes;
+
+  // Extract current block from DOM
+  const currentBlock = extractCurrentBlock();
+  SHREDDER_STATE.currentBlock = currentBlock;
+  SHREDDER_STATE.lastUpdateBlock = cs.lastUpdateBlock;
+  SHREDDER_STATE.chainTicksThisRun = cs.ticksThisRun;
+
+  // Calculate improved ticksThisRun using block difference
+  // Formula: ticksThisRun = chainTicksThisRun + (currentBlock - lastUpdateBlock) * 5
+  if (currentBlock > 0 && cs.lastUpdateBlock >= 0) {
+    const blocksSinceUpdate = Math.max(0, currentBlock - cs.lastUpdateBlock);
+    const ticksFromBlocks = blocksSinceUpdate * 5;
+    SHREDDER_STATE.ticksThisRun = cs.ticksThisRun + ticksFromBlocks;
+  } else {
+    // Fallback to chain value if block extraction fails
+    SHREDDER_STATE.ticksThisRun = cs.ticksThisRun;
+  }
+  // SHREDDER_STATE.activeTicks = cs.activeTicks;
+  SHREDDER_STATE.activeTicks =
+    SHREDDER_STATE.ticksThisRun - (cs.tcStart - cs.crystallisations * 100);
+  SHREDDER_STATE.softcap = cs.softcap + cs.crystallisations * 20;
+  SHREDDER_STATE.tcStart = cs.tcStart - cs.crystallisations * 100;
   SHREDDER_STATE.compressions = cs.compressions;
-  SHREDDER_STATE.hasReachedE308    = cs.hasReachedE308;
-  SHREDDER_STATE.hasScannedTC      = cs.hasScannedTC;
-  SHREDDER_STATE.hasScannedStats   = cs.hasScannedStats;
+  if (cs.nextTcCost && cs.nextTcCost.gt) {
+    SHREDDER_STATE.nextTcCost = cs.nextTcCost;
+  }
+  SHREDDER_STATE.hasReachedE308 = cs.hasReachedE308;
+  SHREDDER_STATE.hasScannedTC = cs.hasScannedTC;
+  SHREDDER_STATE.hasScannedStats = cs.hasScannedStats;
   SHREDDER_STATE.hasScannedUpgrades = cs.hasScannedUpgrades;
   if (cs.condensers && cs.condensers.length > 0) {
     SHREDDER_STATE.condensers = cs.condensers;
   }
   // Reset detection: if chain ticksThisRun is dramatically lower than what we
   // previously stored, a crystallization happened — clear stale state.
-  if (SHREDDER_STATE._prevChainTicks > 0 && cs.ticksThisRun < SHREDDER_STATE._prevChainTicks - 100) {
+  if (
+    SHREDDER_STATE._prevChainTicks > 0 &&
+    cs.ticksThisRun < SHREDDER_STATE._prevChainTicks - 100
+  ) {
     SHREDDER_STATE.pendingMotes = 0;
-    SHREDDER_STATE.nextTcCost   = new Decimal(0);
+    SHREDDER_STATE.nextTcCost = new Decimal(0);
   }
   SHREDDER_STATE._prevChainTicks = cs.ticksThisRun;
 }
 
-
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'SET_TARGET_MOTES') {
+  if (message.type === "SET_TARGET_MOTES") {
     SHREDDER_STATE.targetMotes = message.value;
   }
 });
-
 
 function parseSciNum(text) {
   if (!text) return new Decimal(0);
@@ -266,7 +324,7 @@ function ticksToReachFloor(log10P, currentActiveTicks, softcap, logTarget) {
   if (logTarget === undefined) logTarget = 308;
   if (log10P >= logTarget) return 0;
 
-  const preRate = Math.log10(1.02);        // ~0.00860 (full compounding)
+  const preRate = Math.log10(1.02); // ~0.00860 (full compounding)
   const postRate = Math.log10(1.02) * 0.5; // ~0.00430 (power 0.500)
 
   // Already past softcap? Use post rate entirely
@@ -284,7 +342,10 @@ function ticksToReachFloor(log10P, currentActiveTicks, softcap, logTarget) {
 
   // Will cross softcap: split the calculation
   const log10P_at_softcap = log10P + ticksToSoftcap * preRate;
-  const postSoftcapTicks = Math.max(0, (logTarget - log10P_at_softcap) / postRate);
+  const postSoftcapTicks = Math.max(
+    0,
+    (logTarget - log10P_at_softcap) / postRate,
+  );
 
   return ticksToSoftcap + postSoftcapTicks;
 }
@@ -293,7 +354,7 @@ function extractData() {
   const fullText = document.body.innerText;
 
   // Dust and Dust/Tick (Primary: span classes, Fallback: raw text)
-  const dustEl = document.querySelector('span.yel');
+  const dustEl = document.querySelector("span.yel");
   if (dustEl) {
     SHREDDER_STATE.dust = parseSciNum(dustEl.textContent);
   } else {
@@ -301,7 +362,7 @@ function extractData() {
     if (dMatch) SHREDDER_STATE.dust = parseSciNum(dMatch[1]);
   }
 
-  const dustTickEl = document.querySelector('span.oran');
+  const dustTickEl = document.querySelector("span.oran");
   if (dustTickEl) {
     SHREDDER_STATE.dustPerTick = parseSciNum(dustTickEl.textContent);
   } else {
@@ -319,13 +380,22 @@ function extractData() {
 
   // Motes & Active Ticks via raw text to ignore arbitrary HTML nesting
   const motesMatch = fullText.match(/motes\s+~?([\d,.]+)/i);
-  if (motesMatch) SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ''));
+  if (motesMatch)
+    SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ""));
 
-  const activeTicksMatch = fullText.match(/active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i);
+  const activeTicksMatch = fullText.match(
+    /active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i,
+  );
   if (activeTicksMatch) {
-    SHREDDER_STATE.activeTicks = parseInt(activeTicksMatch[1].replace(/,/g, ''), 10);
+    SHREDDER_STATE.activeTicks = parseInt(
+      activeTicksMatch[1].replace(/,/g, ""),
+      10,
+    );
     if (activeTicksMatch[2]) {
-      SHREDDER_STATE.softcap = parseInt(activeTicksMatch[2].replace(/,/g, ''), 10);
+      SHREDDER_STATE.softcap = parseInt(
+        activeTicksMatch[2].replace(/,/g, ""),
+        10,
+      );
     }
   }
 
@@ -335,7 +405,7 @@ function extractData() {
   for (const match of upgradeMatches) {
     let cost = parseFloat(match[1]);
     const suffix = match[2].toLowerCase();
-    if (suffix === 'k') cost /= 1000;
+    if (suffix === "k") cost /= 1000;
     // Assuming 'm' is motes, so no conversion needed for m since motes are base unit
     if (cost < cheapestUpgrade) {
       cheapestUpgrade = cost;
@@ -344,10 +414,10 @@ function extractData() {
   if (cheapestUpgrade !== Infinity) {
     SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
   }
-  
+
   if (
-    cheapestUpgrade !== Infinity || 
-    fullText.match(/t[1-4][\s\n]*[-–—]/i) || 
+    cheapestUpgrade !== Infinity ||
+    fullText.match(/t[1-4][\s\n]*[-–—]/i) ||
     fullText.includes("req:") ||
     fullText.match(/\bt1\b[\s\S]{1,50}\bt2\b[\s\S]{1,50}\bt3\b/i) ||
     fullText.match(/amplifier\s*=>/i)
@@ -362,7 +432,9 @@ function extractData() {
     SHREDDER_STATE.hasScannedTC = true;
   }
 
-  const tcCostMatch = fullText.match(/compressions[\s\S]{1,200}?cost\s+([0-9.e+]+)\s+dust/i);
+  const tcCostMatch = fullText.match(
+    /compressions[\s\S]{1,200}?cost\s+([0-9.e+]+)\s+dust/i,
+  );
   if (tcCostMatch) {
     SHREDDER_STATE.nextTcCost = parseSciNum(tcCostMatch[1]);
     SHREDDER_STATE.hasScannedTC = true;
@@ -372,7 +444,7 @@ function extractData() {
   const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
   const crMatch = fullText.match(crRegex);
   if (crMatch) {
-    SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ''));
+    SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ""));
   } else if (fullText.toLowerCase().includes("crystallise at 1e308")) {
     SHREDDER_STATE.pendingMotes = 0;
   }
@@ -381,33 +453,57 @@ function extractData() {
   const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);
   SHREDDER_STATE._justReset = false; // Default: no reset this cycle
   if (ticksRunMatch) {
-    const currentTicks = parseInt(ticksRunMatch[1].replace(/,/g, ''), 10);
-    if (SHREDDER_STATE.ticksThisRun > 0 && currentTicks < SHREDDER_STATE.ticksThisRun - 100) {
+    const currentTicks = parseInt(ticksRunMatch[1].replace(/,/g, ""), 10);
+    if (
+      SHREDDER_STATE.ticksThisRun > 0 &&
+      currentTicks < SHREDDER_STATE.ticksThisRun - 100
+    ) {
       // RESET DETECTED (crystallization occurred)
-      SHREDDER_STATE._justReset = true;       // Guard against re-latching hasReachedE308 this cycle
+      SHREDDER_STATE._justReset = true; // Guard against re-latching hasReachedE308 this cycle
       SHREDDER_STATE.nextTcCost = new Decimal(0);
       SHREDDER_STATE.hasScannedTC = false;
       SHREDDER_STATE.compressions = "Pending...";
       SHREDDER_STATE.cheapestUpgrade = null;
       SHREDDER_STATE.hasScannedUpgrades = false;
       SHREDDER_STATE.hasReachedE308 = false; // Clear on crystallization
-      SHREDDER_STATE.pendingMotes = 0;        // Stale CR-tab motes no longer valid
+      SHREDDER_STATE.pendingMotes = 0; // Stale CR-tab motes no longer valid
     }
-    SHREDDER_STATE.ticksThisRun = currentTicks;
+
+    // Apply block-based calculation if we have block data
+    let improvedTicks = currentTicks;
+    const currentBlock = extractCurrentBlock();
+    if (currentBlock > 0 && SHREDDER_STATE.lastUpdateBlock >= 0) {
+      const blocksSinceUpdate = Math.max(
+        0,
+        currentBlock - SHREDDER_STATE.lastUpdateBlock,
+      );
+      const ticksFromBlocks = blocksSinceUpdate * 5;
+      improvedTicks = currentTicks + ticksFromBlocks;
+      console.log("[Dusted] Stats tab block-based update:", {
+        statsParsedTicks: currentTicks,
+        blocksSinceUpdate,
+        ticksFromBlocks,
+        improvedTicks,
+      });
+    }
+
+    SHREDDER_STATE.ticksThisRun = improvedTicks;
     SHREDDER_STATE.hasScannedStats = true;
   }
-  
-  const tcStartMatch = fullText.match(/eff\. tc start \/ softcap\s+([\d,]+)\s*\/\s*([\d,]+)/i);
+
+  const tcStartMatch = fullText.match(
+    /eff\. tc start \/ softcap\s+([\d,]+)\s*\/\s*([\d,]+)/i,
+  );
   if (tcStartMatch) {
-    SHREDDER_STATE.tcStart = parseInt(tcStartMatch[1].replace(/,/g, ''), 10);
-    SHREDDER_STATE.softcap = parseInt(tcStartMatch[2].replace(/,/g, ''), 10);
+    SHREDDER_STATE.tcStart = parseInt(tcStartMatch[1].replace(/,/g, ""), 10);
+    SHREDDER_STATE.softcap = parseInt(tcStartMatch[2].replace(/,/g, ""), 10);
     SHREDDER_STATE.hasScannedStats = true;
   }
 
   // Condenser Grid (Robust row detection ignoring exact CSS styles)
   const currentCondensers = [];
-  const allDivs = document.querySelectorAll('div');
-  allDivs.forEach(row => {
+  const allDivs = document.querySelectorAll("div");
+  allDivs.forEach((row) => {
     const children = row.children;
     if (children.length >= 4) {
       const tierText = (children[0].textContent || "").trim().toLowerCase();
@@ -415,7 +511,7 @@ function extractData() {
         currentCondensers.push({
           tier: tierText.toUpperCase(),
           amount: parseSciNum(children[1].textContent),
-          nextCost: parseSciNum(children[3].textContent)
+          nextCost: parseSciNum(children[3].textContent),
         });
       }
     }
@@ -436,10 +532,13 @@ function evaluateStrategy() {
   let timeToFloor = 0;
   let maxDustBeforeSoftcap = null;
   let optimizationTarget = 308; // Default: crystallization floor
-  
+
   // Latch the e308 flag once effective dust (or max dust) reaches e308.
   // Guard: don't re-latch in the same cycle where a crystallization reset was just detected.
-  if (!SHREDDER_STATE._justReset && (effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0)) {
+  if (
+    !SHREDDER_STATE._justReset &&
+    (effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0)
+  ) {
     SHREDDER_STATE.hasReachedE308 = true;
   }
   SHREDDER_STATE._justReset = false; // Consume the guard
@@ -467,35 +566,39 @@ function evaluateStrategy() {
 
   // Derived from the Stats Page Carry Effects
   const MULTIPLIERS = {
-    'DC1': 3,
-    'DC2': 4,
-    'DC3': 5,
-    'DC4': 6,
-    'DC5': 8,
-    'DC6': 10,
-    'DC7': 12,
-    'DC8': 15
+    DC1: 3,
+    DC2: 4,
+    DC3: 5,
+    DC4: 6,
+    DC5: 8,
+    DC6: 10,
+    DC7: 12,
+    DC8: 15,
   };
 
   let bestPurchase = null;
   let bestPurchaseWait = 0;
   let maxTimeSaved = -Infinity;
   let affordableTargets = [];
-  
+
   // Calculate efficiency delta for each condenser
-  const evaluatedCondensers = SHREDDER_STATE.condensers.map(c => {
+  const evaluatedCondensers = SHREDDER_STATE.condensers.map((c) => {
     let efficiencyDelta = 0;
     let c_t_wait = Infinity;
-    
+
     // The DC-Spike Filter: Ignore DC1-DC4 if cost > e100 and cost > P_tick
-    const isDC1_4 = ['DC1', 'DC2', 'DC3', 'DC4'].includes(c.tier);
-    if (isDC1_4 && c.nextCost.gt(new Decimal("1e100")) && c.nextCost.gt(P_tick)) {
+    const isDC1_4 = ["DC1", "DC2", "DC3", "DC4"].includes(c.tier);
+    if (
+      isDC1_4 &&
+      c.nextCost.gt(new Decimal("1e100")) &&
+      c.nextCost.gt(P_tick)
+    ) {
       efficiencyDelta = -999; // Filtered out
     } else if (P_tick.gt(0)) {
       const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
       c_t_wait = diff.div(P_tick).toNumber();
       const isAffordable = diff.lte(0);
-      
+
       // Skip purchases whose wait exceeds our productive runway
       // (they'd push us past softcap before we can even afford them)
       if (c_t_wait > timeToFloor && timeToFloor > 0 && !isAffordable) {
@@ -506,12 +609,18 @@ function evaluateStrategy() {
         const P_new_estimated = P_tick.mul(multiplier);
         // Feature #1: Account for activeTicks advancing during wait
         const activeTicksAtPurchase = activeTicks + c_t_wait;
-        const t_floor_after = ticksToReachFloor(P_new_estimated.log10(), activeTicksAtPurchase, softcap, optimizationTarget);
-        
+        const t_floor_after = ticksToReachFloor(
+          P_new_estimated.log10(),
+          activeTicksAtPurchase,
+          softcap,
+          optimizationTarget,
+        );
+
         const total_time_if_buy = c_t_wait + t_floor_after;
         const time_saved = timeToFloor - total_time_if_buy;
-        efficiencyDelta = timeToFloor > 0 ? (time_saved / timeToFloor) * 100 : 0;
-        
+        efficiencyDelta =
+          timeToFloor > 0 ? (time_saved / timeToFloor) * 100 : 0;
+
         if (time_saved > maxTimeSaved && time_saved > 0) {
           maxTimeSaved = time_saved;
           bestPurchase = c.tier;
@@ -528,7 +637,7 @@ function evaluateStrategy() {
       amount: c.amount.toString(),
       nextCost: c.nextCost.toString(),
       efficiencyDelta: efficiencyDelta,
-      t_wait: c_t_wait
+      t_wait: c_t_wait,
     };
   });
 
@@ -538,14 +647,14 @@ function evaluateStrategy() {
     const diff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(effectiveDust));
     const t_wait = diff.div(P_tick).toNumber();
     const tcAffordable = diff.lte(0);
-    
+
     // Skip if wait exceeds productive runway
     if (t_wait > timeToFloor && timeToFloor > 0 && !tcAffordable) {
       tc_efficiencyDelta = -999;
     } else {
       const motePower = Math.max(1, SHREDDER_STATE.motes);
       const baseMultiplier = 1.0583 * motePower;
-      
+
       let multiplierToApply;
       if (activeTicks > 0) {
         multiplierToApply = new Decimal(baseMultiplier);
@@ -553,19 +662,28 @@ function evaluateStrategy() {
           multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
         }
       } else {
-        multiplierToApply = Decimal.pow(baseMultiplier, SHREDDER_STATE.compressions + 1);
+        multiplierToApply = Decimal.pow(
+          baseMultiplier,
+          SHREDDER_STATE.compressions + 1,
+        );
         multiplierToApply = multiplierToApply.mul(Math.pow(1.02, 100));
       }
-      
+
       const P_new_tc = P_tick.mul(multiplierToApply);
       // Feature #1: TC purchase grants +100 active ticks (threshold drops)
       const activeTicksAtTcPurchase = activeTicks + t_wait + 100;
-      const t_floor_after_tc = ticksToReachFloor(P_new_tc.log10(), activeTicksAtTcPurchase, softcap, optimizationTarget);
+      const t_floor_after_tc = ticksToReachFloor(
+        P_new_tc.log10(),
+        activeTicksAtTcPurchase,
+        softcap,
+        optimizationTarget,
+      );
       const total_time_if_buy_tc = t_wait + t_floor_after_tc;
       const time_saved_tc = timeToFloor - total_time_if_buy_tc;
-      
-      tc_efficiencyDelta = timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
-      
+
+      tc_efficiencyDelta =
+        timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
+
       if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
         maxTimeSaved = time_saved_tc;
         bestPurchase = "TC";
@@ -583,12 +701,17 @@ function evaluateStrategy() {
   if (affordableTargets.length > 0 && P_tick.gt(0)) {
     // Build list of affordable DCs sorted by multiplier (highest first)
     const affordableDCs = SHREDDER_STATE.condensers
-      .filter(c => {
+      .filter((c) => {
         const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
         if (!diff.eq(0) || !MULTIPLIERS[c.tier]) return false;
         // Apply DC-Spike filter: exclude DC1-DC4 if cost > e100 and cost > P_tick
-        const isDC1_4 = ['DC1', 'DC2', 'DC3', 'DC4'].includes(c.tier);
-        if (isDC1_4 && c.nextCost.gt(new Decimal("1e100")) && c.nextCost.gt(P_tick)) return false;
+        const isDC1_4 = ["DC1", "DC2", "DC3", "DC4"].includes(c.tier);
+        if (
+          isDC1_4 &&
+          c.nextCost.gt(new Decimal("1e100")) &&
+          c.nextCost.gt(P_tick)
+        )
+          return false;
         return true;
       })
       .sort((a, b) => (MULTIPLIERS[b.tier] || 0) - (MULTIPLIERS[a.tier] || 0));
@@ -610,24 +733,39 @@ function evaluateStrategy() {
 
       if (chainSteps.length > 0) {
         // Recalculate timeToFloor with simulated P_tick
-        const simTimeToFloor = ticksToReachFloor(simP.log10(), simActiveTicks, softcap, optimizationTarget);
+        const simTimeToFloor = ticksToReachFloor(
+          simP.log10(),
+          simActiveTicks,
+          softcap,
+          optimizationTarget,
+        );
 
         // Now evaluate remaining non-affordable upgrades against the boosted state
         let chainBestTarget = null;
         let chainBestWait = 0;
         let chainMaxTimeSaved = -Infinity;
 
-        SHREDDER_STATE.condensers.forEach(c => {
+        SHREDDER_STATE.condensers.forEach((c) => {
           if (chainSteps.includes(c.tier)) return; // Already bought in chain
-          const isDC1_4 = ['DC1', 'DC2', 'DC3', 'DC4'].includes(c.tier);
-          if (isDC1_4 && c.nextCost.gt(new Decimal("1e100")) && c.nextCost.gt(simP)) return;
+          const isDC1_4 = ["DC1", "DC2", "DC3", "DC4"].includes(c.tier);
+          if (
+            isDC1_4 &&
+            c.nextCost.gt(new Decimal("1e100")) &&
+            c.nextCost.gt(simP)
+          )
+            return;
 
           const diff = Decimal.max(0, c.nextCost.sub(simDust));
           const chainWait = diff.div(simP).toNumber();
           const multiplier = MULTIPLIERS[c.tier] || 1.1;
           const P_new = simP.mul(multiplier);
           const activeAtPurchase = simActiveTicks + chainWait;
-          const floorAfter = ticksToReachFloor(P_new.log10(), activeAtPurchase, softcap, optimizationTarget);
+          const floorAfter = ticksToReachFloor(
+            P_new.log10(),
+            activeAtPurchase,
+            softcap,
+            optimizationTarget,
+          );
           const totalTime = chainWait + floorAfter;
           const saved = simTimeToFloor - totalTime;
 
@@ -650,7 +788,12 @@ function evaluateStrategy() {
           }
           const P_new_tc = simP.mul(tcMult);
           const tcActiveAfter = simActiveTicks + tcChainWait + 100;
-          const tcFloorAfter = ticksToReachFloor(P_new_tc.log10(), tcActiveAfter, softcap, optimizationTarget);
+          const tcFloorAfter = ticksToReachFloor(
+            P_new_tc.log10(),
+            tcActiveAfter,
+            softcap,
+            optimizationTarget,
+          );
           const tcTotalTime = tcChainWait + tcFloorAfter;
           const tcSaved = simTimeToFloor - tcTotalTime;
           if (tcSaved > chainMaxTimeSaved && tcSaved > 0) {
@@ -670,13 +813,16 @@ function evaluateStrategy() {
           const chainTotalFloor = simTimeToFloor - chainMaxTimeSaved; // time with chain+target
           const singleTotalFloor = timeToFloor - maxTimeSaved; // time with single best
 
-          if (chainTotalFloor < singleTotalFloor && chainTotalFloor < timeToFloor) {
+          if (
+            chainTotalFloor < singleTotalFloor &&
+            chainTotalFloor < timeToFloor
+          ) {
             // Chain path wins
             chainSequence = {
               steps: chainSteps,
               target: chainBestTarget,
               wait: chainBestWait,
-              totalTime: chainTotalFloor
+              totalTime: chainTotalFloor,
             };
           }
         }
@@ -686,7 +832,7 @@ function evaluateStrategy() {
 
   // Hard Exit Rule Simulation
   let recommendation = "Hold Position (Natural Growth)";
-  
+
   const totalMotes = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
   const hasTargetMotes = totalMotes >= SHREDDER_STATE.targetMotes;
   const hitSoftcap = activeTicks >= softcap;
@@ -710,53 +856,71 @@ function evaluateStrategy() {
     tc_efficiencyDelta: tc_efficiencyDelta,
     chainSequence: chainSequence,
     maxDustBeforeSoftcap: maxDustBeforeSoftcap,
-    hasReachedE308: SHREDDER_STATE.hasReachedE308
+    hasReachedE308: SHREDDER_STATE.hasReachedE308,
   };
 }
 
-/** Try to extract the connected wallet address from the game page DOM. */
-function scrapePlayerAddress() {
-  const fullText = document.body.innerText;
-  // Game typically shows the address in format 0x... somewhere on the page
-  const match = fullText.match(/0x[0-9a-fA-F]{40}/);
-  if (match) return match[0];
-  // Fallback: check window.ethereum if available (injected by MetaMask)
-  if (window.ethereum && window.ethereum.selectedAddress) {
-    return window.ethereum.selectedAddress;
+async function scrapePlayerAddress() {
+  if (window.ethereum) {
+    // selectedAddress is set when already connected
+    if (window.ethereum.selectedAddress) {
+      return window.ethereum.selectedAddress;
+    }
+    // eth_accounts returns connected accounts without prompting
+    try {
+      const accounts = await window.ethereum.request({
+        method: "eth_accounts",
+      });
+      if (accounts && accounts.length > 0) {
+        return accounts[0];
+      }
+    } catch (e) {
+      console.warn("eth_accounts failed:", e);
+    }
   }
-  return null;
+  // fallback
+  return "0xc2e97ae6ca9aafb19ce0b8bcd1f4c50285db2377";
 }
 
-const intervalId = setInterval(() => {
+const intervalId = setInterval(async () => {
+  // console.log("[Dusted] tick", Date.now(), lastChainFetch);
   try {
     // 1. Try to resolve the player address (once found, cached)
     if (!chainPlayerAddress) {
-      chainPlayerAddress = scrapePlayerAddress();
+      // window.ethereum.request({ method: "eth_requestAccounts" });
+      chainPlayerAddress = await scrapePlayerAddress();
     }
-
+    // console.log("[Dusted] chainPlayerAddress", chainPlayerAddress);
     // 2. Fetch chain state every 10s (non-blocking)
     const now = Date.now();
-    if (chainPlayerAddress && (now - lastChainFetch > 10000)) {
+    if (chainPlayerAddress && now - lastChainFetch > 10000) {
       lastChainFetch = now;
       fetchChainState(chainPlayerAddress)
-        .then(cs => {
+        .then((cs) => {
           applyChainState(cs);
           console.log("[Dusted] Chain state applied:", {
             crystallisations: cs.crystallisations,
             hasReachedE308: cs.hasReachedE308,
-            ticksThisRun: cs.ticksThisRun,
-            activeTicks: cs.activeTicks,
+            chainTicksThisRun: cs.ticksThisRun,
+            lastUpdateBlock: cs.lastUpdateBlock,
+            currentBlock: SHREDDER_STATE.currentBlock,
+            blocksSinceUpdate: SHREDDER_STATE.currentBlock - cs.lastUpdateBlock,
+            improvedTicksThisRun: SHREDDER_STATE.ticksThisRun,
+            activeTicks: SHREDDER_STATE.activeTicks,
             softcap: cs.softcap,
             compressions: cs.compressions,
+            nextTcCost: cs.nextTcCost ? cs.nextTcCost.toString() : "0",
           });
         })
-        .catch(err => console.warn("[Dusted] Chain fetch failed:", err.message));
+        .catch((err) =>
+          console.warn("[Dusted] Chain fetch failed:", err.message),
+        );
     }
 
     // 3. DOM extraction (supplements chain data for unclaimed dust, pendingMotes, etc.)
     extractData();
     const strategy = evaluateStrategy();
-    
+
     const payload = {
       dust: SHREDDER_STATE.dust.toString(),
       dustPerTick: SHREDDER_STATE.dustPerTick.toString(),
@@ -765,7 +929,8 @@ const intervalId = setInterval(() => {
       motes: SHREDDER_STATE.motes,
       pendingMotes: SHREDDER_STATE.pendingMotes,
       totalMotes: SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes,
-      needsCRScan: SHREDDER_STATE.hasReachedE308 && SHREDDER_STATE.pendingMotes === 0,
+      needsCRScan:
+        SHREDDER_STATE.hasReachedE308 && SHREDDER_STATE.pendingMotes === 0,
       cheapestUpgrade: SHREDDER_STATE.cheapestUpgrade,
       hasScannedTC: SHREDDER_STATE.hasScannedTC,
       hasScannedUpgrades: SHREDDER_STATE.hasScannedUpgrades,
@@ -774,11 +939,14 @@ const intervalId = setInterval(() => {
       tcStart: SHREDDER_STATE.tcStart,
       compressions: SHREDDER_STATE.compressions,
       nextTcCost: SHREDDER_STATE.nextTcCost.toString(),
-      ...strategy
+      ...strategy,
     };
-    
-    chrome.runtime.sendMessage({ type: 'HUD_UPDATE', payload }).catch((err) => {
-      if (err.message && err.message.includes("Extension context invalidated")) {
+
+    chrome.runtime.sendMessage({ type: "HUD_UPDATE", payload }).catch((err) => {
+      if (
+        err.message &&
+        err.message.includes("Extension context invalidated")
+      ) {
         clearInterval(intervalId);
       }
     });

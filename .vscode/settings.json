@@ -1,0 +1,8 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "/^node -c /Users/opeculiar/work/dusted/content\\.js 2>&1$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}

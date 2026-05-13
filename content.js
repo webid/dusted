@@ -1,8 +1,15 @@
-console.log("Dust Protocol HUD: Intelligence script loaded.");
+// -- VIEW Contract (chain-direct data source) ---------------------------------
+const CHAIN_RPC   = "https://node.shadownet.etherlink.com";
+const VIEW_ADDR   = "0x9aB01b7b864c255Af5c8BD5C0f26D6bE0d8201F6";
+const CORE_ADDR   = "0x098ebA92E5a634A3be967E6891F905E2ABe89059";
 
-const SHREDDER_STATE = {
-  dust: new Decimal(0),
-  dustPerTick: new Decimal(0),
+// Ensure Decimal is available from break_infinity.js
+const D = (typeof Decimal !== 'undefined') ? Decimal : (typeof window !== 'undefined' ? window.Decimal : null);
+if (!D) console.error("Dusted: Decimal library (break_infinity.js) not found!");
+
+var SHREDDER_STATE = {
+  dust: D ? new D(0) : null,
+  dustPerTick: D ? new D(0) : null,
   activeTicks: 0,
   softcap: 30760,
   motes: 0,
@@ -16,16 +23,234 @@ const SHREDDER_STATE = {
   tcStart: 6200,
   condensers: [],
   compressions: 0,
-  nextTcCost: new Decimal(0),
-  unclaimedDust: new Decimal(0),
-  hasReachedE308: false  // Persists for the run — once e308 is hit, crystallization is always available
+  nextTcCost: D ? new D(0) : null,
+  unclaimedDust: D ? new D(0) : null,
+  hasReachedE308: false,
+  _prevChainTicks: 0,
+  _justReset: false,
 };
+
+// keccak256 selectors (verified via `cast sig`)
+const SEL_GET_PLAYER    = "0x5c12cd4b"; // getPlayer(address)
+const SEL_DUST_PER_TICK = "0xbd859b08"; // dustPerTick(address)
+const SEL_COMP_COST     = "0x62f2db0e"; // compressionCost(address)
+const SEL_TICK_PARAMS   = "0x6b7582c4"; // getTickSpeedParams()
+const SEL_CARRY_GLOBALS = "0x1606b060"; // getCarryGlobals()
+const SEL_ACTION_FEE    = "0x1441d227"; // actionFee()
+const SEL_BLOCKS_PER_TICK = "0x4c0b305b"; // blocksPerTick()
+
+
+/** Zero-pad a hex value to 32 bytes (64 hex chars). */
+function pad32(hex) {
+  return hex.replace('0x', '').padStart(64, '0');
+}
+
+/** ABI-encode a single address argument. */
+function encodeAddr(addr) {
+  return pad32(addr.toLowerCase().replace('0x', ''));
+}
+
+/** Decode a uint256 from a 32-byte ABI word at offset (in hex string, no 0x). */
+function decodeUint(hex, wordOffset) {
+  const start = wordOffset * 64;
+  return parseInt(hex.slice(start, start + 64), 16);
+}
+
+/** Decode a FloatNum struct {mantissa(uint128), exponent(int64), negative(bool)}
+ *  from ABI-encoded output at wordOffset. Each field occupies one 32-byte word. */
+function decodeFloat(hex, wordOffset) {
+  const m = decodeUint(hex, wordOffset);       // uint128 mantissa (scaled by 1e18)
+  const eRaw = decodeUint(hex, wordOffset + 1); // int64 exponent (may be negative)
+  const neg  = decodeUint(hex, wordOffset + 2); // bool negative
+  // Convert int64: if top bit set → negative
+  const e = eRaw > 0x7FFFFFFFFFFFFFFF ? eRaw - 0x10000000000000000 : eRaw;
+  // mantissa is stored * 1e18 as a uint128
+  const mantissaF = m / 1e18;
+  const val = new Decimal(`${mantissaF}e${e}`);
+  return neg ? val.neg() : val;
+}
+
+/** Raw eth_call via fetch. Returns hex result string (no 0x). */
+async function ethCall(to, data) {
+  const body = JSON.stringify({
+    jsonrpc: "2.0", id: 1, method: "eth_call",
+    params: [{ to, data }, "latest"]
+  });
+  const res = await fetch(CHAIN_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message);
+  return (json.result || "0x").slice(2); // strip 0x
+}
+
+/** Fetch and decode the player's on-chain state. Returns a partial SHREDDER_STATE override. */
+async function fetchChainState(playerAddress) {
+  const addrHex = encodeAddr(playerAddress);
+
+  // VIEW contract: player-specific data
+  // CORE contract: global params (getTickSpeedParams, getCarryGlobals, blocksPerTick)
+  const [playerHex, dptHex, tickHex, carryHex] = await Promise.all([
+    ethCall(VIEW_ADDR, SEL_GET_PLAYER    + addrHex),
+    ethCall(VIEW_ADDR, SEL_DUST_PER_TICK + addrHex),
+    ethCall(CORE_ADDR, SEL_TICK_PARAMS),
+    ethCall(CORE_ADDR, SEL_CARRY_GLOBALS),
+  ]);
+
+
+  // ── getPlayer layout (each field = one or more 32-byte words) ────────────
+  // Field order from ABI:
+  //  [0-2]   dust (FloatNum: mantissa, exponent, negative)
+  //  [3-5]   maxDust
+  //  [6-8]   motes
+  //  [9-11]  shards
+  //  [12-14] voidEssence
+  //  [15-38] dcAmounts[8] (8 × 3 words)
+  //  [39-46] dcPurchases[8] (8 × 1 word, uint32 packed)
+  //  [47-54] idPurchases[8]
+  //  [55-62] tdPurchases[8]
+  //  [63]    moteUpgrades (uint256)
+  //  [64]    collapseStudies (uint256)
+  //  [65]    crystallisations (uint32)
+  //  [66]    voidCollapses (uint32)
+  //  [67]    realityBreaks (uint32)
+  //  [68]    lastUpdateBlock (uint64)
+  //  [69]    compressionPurchases (uint32)
+  //  [70-72] relicMultiplier (FloatNum)
+  //  [73]    relicSlots (uint8)
+  //  [74]    initialized (bool)
+  //  [75]    ticksThisRun (uint64)
+  //  [76]    tickSpeedParamsBlock (uint64)
+  //  [77]    psTickSpeedRate (uint64)
+  //  [78]    psTickSpeedStart (uint64)
+  //  [79]    psTickSpeedSoftcap (uint64)
+  //  [80]    psTickSpeedPower (uint32)
+  //  [81-83] allTimeMaxDust (FloatNum)
+  //  [84-91] dcCarriedPurchases[8]
+  //  [92]    psTickSpeedSoftcapDecay (uint64)
+  //  [93]    psTickSpeedSoftcapMin (uint32)
+  //  [94]    psTickSpeedSoftcapGrowth (uint32)
+
+  const dust      = decodeFloat(playerHex, 0);
+  const motes     = decodeFloat(playerHex, 6);
+  const crys      = decodeUint(playerHex, 65);
+  const comprP    = decodeUint(playerHex, 69);
+  const ticksRun  = decodeUint(playerHex, 75);
+  const psStart   = decodeUint(playerHex, 78);
+  const psSoftcap = decodeUint(playerHex, 79);
+  const allTimeMax = decodeFloat(playerHex, 81);
+
+  // dcAmounts[0..7] start at word 15, each FloatNum = 3 words
+  const dcAmounts = [];
+  for (let i = 0; i < 8; i++) {
+    dcAmounts.push(decodeFloat(playerHex, 15 + i * 3));
+  }
+  // dcPurchases[0..7] at word 39
+  const dcPurchases = [];
+  for (let i = 0; i < 8; i++) {
+    dcPurchases.push(decodeUint(playerHex, 39 + i));
+  }
+  // dcCarriedPurchases[0..7] at word 84
+  const dcCarried = [];
+  for (let i = 0; i < 8; i++) {
+    dcCarried.push(decodeUint(playerHex, 84 + i));
+  }
+
+  // ── dustPerTick (3-word FloatNum) ─────────────────────────────────────────
+  const dpt = decodeFloat(dptHex, 0);
+
+  // ── getTickSpeedParams → (rate, start, softcap, power, lastParamChange) ──
+  const globalSoftcap = decodeUint(tickHex, 2);
+
+  // ── getCarryGlobals → (softcapDecay, softcapMin, softcapGrowth, carryK, amountCarry) ─
+  const carryK = decodeUint(carryHex, 3);
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const softcap   = psSoftcap || globalSoftcap || SHREDDER_STATE.softcap;
+  const tcStart   = psStart   || SHREDDER_STATE.tcStart;
+  const activeTicks = Math.max(0, ticksRun - tcStart);
+
+  // hasReachedE308: correct derivation — no sticky latch needed
+  // True if current dust ≥ 1e308, OR all-time max ≥ 1e308 (a prior run hit it)
+  // After crystallization, crys increments but dust resets — we can safely
+  // check dust directly each cycle.
+  const hasReachedE308 =
+    dust.gte(new Decimal("1e308")) ||
+    allTimeMax.gte(new Decimal("1e308"));
+
+  // Build condenser objects compatible with evaluateStrategy()
+  const condensers = dcAmounts.map((amt, i) => ({
+    tier:     `DC${i + 1}`,
+    amount:   amt,
+    nextCost: amt,   // dcAmounts[i] IS the next purchase cost
+  }));
+
+  return {
+    dust,
+    dustPerTick:    dpt,
+    motes:          motes.toNumber(),
+    ticksThisRun:   ticksRun,
+    activeTicks,
+    softcap,
+    tcStart,
+    compressions:   comprP,
+    crystallisations: crys,
+    hasReachedE308,
+    condensers,
+    carryK,
+    dcPurchases,
+    dcCarried,
+    // These are now always satisfied from chain data:
+    hasScannedTC:       true,
+    hasScannedStats:    true,
+    hasScannedUpgrades: condensers.length > 0,
+  };
+}
+
+/** Address of the currently connected wallet — populated once we find it in the DOM. */
+let chainPlayerAddress = null;
+
+/** Last time we fetched from chain (ms). */
+let lastChainFetch = 0;
+
+/** Merge a chainState object into SHREDDER_STATE. */
+function applyChainState(cs) {
+  if (!cs) return;
+  // Only overwrite dust/dustPerTick if chain values are non-zero
+  // (DOM still provides finer-grained unclaimed-dust tracking)
+  if (cs.dust && cs.dust.gt(0))        SHREDDER_STATE.dust        = cs.dust;
+  if (cs.dustPerTick && cs.dustPerTick.gt(0)) SHREDDER_STATE.dustPerTick = cs.dustPerTick;
+  SHREDDER_STATE.motes        = cs.motes;
+  SHREDDER_STATE.ticksThisRun = cs.ticksThisRun;
+  SHREDDER_STATE.activeTicks  = cs.activeTicks;
+  SHREDDER_STATE.softcap      = cs.softcap;
+  SHREDDER_STATE.tcStart      = cs.tcStart;
+  SHREDDER_STATE.compressions = cs.compressions;
+  SHREDDER_STATE.hasReachedE308    = cs.hasReachedE308;
+  SHREDDER_STATE.hasScannedTC      = cs.hasScannedTC;
+  SHREDDER_STATE.hasScannedStats   = cs.hasScannedStats;
+  SHREDDER_STATE.hasScannedUpgrades = cs.hasScannedUpgrades;
+  if (cs.condensers && cs.condensers.length > 0) {
+    SHREDDER_STATE.condensers = cs.condensers;
+  }
+  // Reset detection: if chain ticksThisRun is dramatically lower than what we
+  // previously stored, a crystallization happened — clear stale state.
+  if (SHREDDER_STATE._prevChainTicks > 0 && cs.ticksThisRun < SHREDDER_STATE._prevChainTicks - 100) {
+    SHREDDER_STATE.pendingMotes = 0;
+    SHREDDER_STATE.nextTcCost   = new Decimal(0);
+  }
+  SHREDDER_STATE._prevChainTicks = cs.ticksThisRun;
+}
+
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'SET_TARGET_MOTES') {
     SHREDDER_STATE.targetMotes = message.value;
   }
 });
+
 
 function parseSciNum(text) {
   if (!text) return new Decimal(0);
@@ -154,16 +379,19 @@ function extractData() {
 
   // Stats Telemetry Parsing
   const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);
+  SHREDDER_STATE._justReset = false; // Default: no reset this cycle
   if (ticksRunMatch) {
     const currentTicks = parseInt(ticksRunMatch[1].replace(/,/g, ''), 10);
     if (SHREDDER_STATE.ticksThisRun > 0 && currentTicks < SHREDDER_STATE.ticksThisRun - 100) {
-      // RESET DETECTED
+      // RESET DETECTED (crystallization occurred)
+      SHREDDER_STATE._justReset = true;       // Guard against re-latching hasReachedE308 this cycle
       SHREDDER_STATE.nextTcCost = new Decimal(0);
       SHREDDER_STATE.hasScannedTC = false;
       SHREDDER_STATE.compressions = "Pending...";
       SHREDDER_STATE.cheapestUpgrade = null;
       SHREDDER_STATE.hasScannedUpgrades = false;
-      SHREDDER_STATE.hasReachedE308 = false; // Reset on crystallization
+      SHREDDER_STATE.hasReachedE308 = false; // Clear on crystallization
+      SHREDDER_STATE.pendingMotes = 0;        // Stale CR-tab motes no longer valid
     }
     SHREDDER_STATE.ticksThisRun = currentTicks;
     SHREDDER_STATE.hasScannedStats = true;
@@ -209,10 +437,12 @@ function evaluateStrategy() {
   let maxDustBeforeSoftcap = null;
   let optimizationTarget = 308; // Default: crystallization floor
   
-  // Latch the e308 flag once effective dust (or max dust) reaches e308
-  if (effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0) {
+  // Latch the e308 flag once effective dust (or max dust) reaches e308.
+  // Guard: don't re-latch in the same cycle where a crystallization reset was just detected.
+  if (!SHREDDER_STATE._justReset && (effectiveDust.gte(new Decimal("1e308")) || SHREDDER_STATE.pendingMotes > 0)) {
     SHREDDER_STATE.hasReachedE308 = true;
   }
+  SHREDDER_STATE._justReset = false; // Consume the guard
 
   if (P_tick.gt(0)) {
     const log10_P = P_tick.log10();
@@ -484,8 +714,46 @@ function evaluateStrategy() {
   };
 }
 
+/** Try to extract the connected wallet address from the game page DOM. */
+function scrapePlayerAddress() {
+  const fullText = document.body.innerText;
+  // Game typically shows the address in format 0x... somewhere on the page
+  const match = fullText.match(/0x[0-9a-fA-F]{40}/);
+  if (match) return match[0];
+  // Fallback: check window.ethereum if available (injected by MetaMask)
+  if (window.ethereum && window.ethereum.selectedAddress) {
+    return window.ethereum.selectedAddress;
+  }
+  return null;
+}
+
 const intervalId = setInterval(() => {
   try {
+    // 1. Try to resolve the player address (once found, cached)
+    if (!chainPlayerAddress) {
+      chainPlayerAddress = scrapePlayerAddress();
+    }
+
+    // 2. Fetch chain state every 10s (non-blocking)
+    const now = Date.now();
+    if (chainPlayerAddress && (now - lastChainFetch > 10000)) {
+      lastChainFetch = now;
+      fetchChainState(chainPlayerAddress)
+        .then(cs => {
+          applyChainState(cs);
+          console.log("[Dusted] Chain state applied:", {
+            crystallisations: cs.crystallisations,
+            hasReachedE308: cs.hasReachedE308,
+            ticksThisRun: cs.ticksThisRun,
+            activeTicks: cs.activeTicks,
+            softcap: cs.softcap,
+            compressions: cs.compressions,
+          });
+        })
+        .catch(err => console.warn("[Dusted] Chain fetch failed:", err.message));
+    }
+
+    // 3. DOM extraction (supplements chain data for unclaimed dust, pendingMotes, etc.)
     extractData();
     const strategy = evaluateStrategy();
     

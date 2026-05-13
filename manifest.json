@@ -15,7 +15,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://dustprotocol.pages.dev/*"
+    "https://dustprotocol.pages.dev/*",
+    "https://node.shadownet.etherlink.com/*"
   ],
   "background": {
     "service_worker": "background.js"

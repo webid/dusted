@@ -12,6 +12,24 @@ const D =
       : null;
 if (!D) console.error("Dusted: Decimal library (break_infinity.js) not found!");
 
+// mote upgrades (for upgrade scanning and strategy evaluation)
+
+// grab from playerHex word 63 (moteUpgrades) and decode as uint256 bitmask
+
+// Usage:
+// activeSet.has(13); // Lightning fast boolean check
+
+// import { Ef } from "./mote_upgrades.js";
+
+function getActiveIdsSet(hexMask, upgradesData) {
+  const mask = BigInt(hexMask);
+  return new Set(
+    upgradesData
+      .filter((u) => (mask & (1n << BigInt(u.id))) !== 0n)
+      .map((u) => u.id),
+  );
+}
+
 var SHREDDER_STATE = {
   dust: D ? new D(0) : null,
   dustPerTick: D ? new D(0) : null,
@@ -156,6 +174,40 @@ async function fetchChainState(playerAddress) {
   const psSoftcap = decodeUint(playerHex, 79);
   const allTimeMax = decodeFloat(playerHex, 81);
   const roundMax = decodeFloat(playerHex, 3);
+  const activeUpgrades = getActiveIdsSet(
+    decodeUint(playerHex, 63),
+    moteUpgrades,
+  );
+
+  // console.log("Active Mote Upgrades IDs:", activeUpgrades);
+  // iterate over moteUpgradeTiers and log which upgrades inside each tier are active
+  moteUpgradeTiers.forEach((tierName, tierIndex) => {
+    const upgradesInTier = moteUpgrades.filter((u) => u.tier === tierIndex);
+    // const activeUpgradesInTier = upgradesInTier.filter((u) =>
+    //   activeUpgrades.has(u.id),
+    // );
+    const inactiveUpgradesInTier = upgradesInTier.filter(
+      (u) => !activeUpgrades.has(u.id),
+    );
+
+    // inactiveUpgradesInTier.length > 0 &&
+    //   console.log(
+    //     `Tier ${tierIndex} (${tierName}):`,
+    //     inactiveUpgradesInTier.map((u) => u.name),
+    //   );
+  });
+
+  // TODO: this needs to be a separate function to optimily scan the cheapest inactive upgrade and all its fields
+  const cheapestInactiveUpgrade = moteUpgrades.reduce(
+    (cheapest, u) =>
+      u.cost < cheapest.cost && !activeUpgrades.has(u.id) ? u : cheapest,
+    { cost: Infinity },
+  );
+
+  // console.log(
+  //   `Cheapest Upgrade to Buy:`,
+  //   `Tier ${cheapestInactiveUpgrade.tier}: ${moteUpgradeTiers[cheapestInactiveUpgrade.tier]} -> ${cheapestInactiveUpgrade.name}, [${cheapestInactiveUpgrade.cost} motes]`,
+  // );
 
   // dcAmounts[0..7] start at word 15, each FloatNum = 3 words
   const dcAmounts = [];
@@ -228,7 +280,8 @@ async function fetchChainState(playerAddress) {
     // These are now always satisfied from chain data:
     hasScannedTC: true,
     hasScannedStats: true,
-    hasScannedUpgrades: condensers.length > 0,
+    hasScannedUpgrades: true,
+    cheapestUpgrade: cheapestInactiveUpgrade.cost,
   };
 }
 
@@ -305,6 +358,7 @@ function applyChainState(cs) {
     SHREDDER_STATE.nextTcCost = new Decimal(0);
   }
   SHREDDER_STATE._prevChainTicks = cs.ticksThisRun;
+  SHREDDER_STATE.cheapestUpgrade = cs.cheapestUpgrade;
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -407,30 +461,30 @@ function extractData() {
   // }
 
   // Upgrades parsing
-  let cheapestUpgrade = Infinity;
-  const upgradeMatches = fullText.matchAll(/([\d.]+)([kKmM]?)\s+BUY/gi);
-  for (const match of upgradeMatches) {
-    let cost = parseFloat(match[1]);
-    const suffix = match[2].toLowerCase();
-    if (suffix === "k") cost /= 1000;
-    // Assuming 'm' is motes, so no conversion needed for m since motes are base unit
-    if (cost < cheapestUpgrade) {
-      cheapestUpgrade = cost;
-    }
-  }
-  if (cheapestUpgrade !== Infinity) {
-    SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
-  }
+  // let cheapestUpgrade = Infinity;
+  // const upgradeMatches = fullText.matchAll(/([\d.]+)([kKmM]?)\s+BUY/gi);
+  // for (const match of upgradeMatches) {
+  //   let cost = parseFloat(match[1]);
+  //   const suffix = match[2].toLowerCase();
+  //   if (suffix === "k") cost /= 1000;
+  //   // Assuming 'm' is motes, so no conversion needed for m since motes are base unit
+  //   if (cost < cheapestUpgrade) {
+  //     cheapestUpgrade = cost;
+  //   }
+  // }
+  // if (cheapestUpgrade !== Infinity) {
+  //   SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
+  // }
 
-  if (
-    cheapestUpgrade !== Infinity ||
-    fullText.match(/t[1-4][\s\n]*[-–—]/i) ||
-    fullText.includes("req:") ||
-    fullText.match(/\bt1\b[\s\S]{1,50}\bt2\b[\s\S]{1,50}\bt3\b/i) ||
-    fullText.match(/amplifier\s*=>/i)
-  ) {
-    SHREDDER_STATE.hasScannedUpgrades = true;
-  }
+  // if (
+  //   cheapestUpgrade !== Infinity ||
+  //   fullText.match(/t[1-4][\s\n]*[-–—]/i) ||
+  //   fullText.includes("req:") ||
+  //   fullText.match(/\bt1\b[\s\S]{1,50}\bt2\b[\s\S]{1,50}\bt3\b/i) ||
+  //   fullText.match(/amplifier\s*=>/i)
+  // ) {
+  //   SHREDDER_STATE.hasScannedUpgrades = true;
+  // }
 
   // Temporal Compression parsing
   // const compMatch = fullText.match(/compressions\s+(\d+)/i);
@@ -907,24 +961,24 @@ const intervalId = setInterval(async () => {
     // console.log("[Dusted] chainPlayerAddress", chainPlayerAddress);
     // 2. Fetch chain state every 10s (non-blocking)
     const now = Date.now();
-    if (chainPlayerAddress && now - lastChainFetch > 2000) {
+    if (chainPlayerAddress && now - lastChainFetch > 3000) {
       lastChainFetch = now;
       fetchChainState(chainPlayerAddress)
         .then((cs) => {
           applyChainState(cs);
-          console.log("[Dusted] Chain state applied:", {
-            crystallisations: cs.crystallisations,
-            hasReachedE308: cs.hasReachedE308,
-            chainTicksThisRun: cs.ticksThisRun,
-            lastUpdateBlock: cs.lastUpdateBlock,
-            currentBlock: SHREDDER_STATE.currentBlock,
-            blocksSinceUpdate: SHREDDER_STATE.currentBlock - cs.lastUpdateBlock,
-            improvedTicksThisRun: SHREDDER_STATE.ticksThisRun,
-            activeTicks: SHREDDER_STATE.activeTicks,
-            softcap: cs.softcap,
-            compressions: cs.compressions,
-            nextTcCost: cs.nextTcCost ? cs.nextTcCost.toString() : "0",
-          });
+          // console.log("[Dusted] Chain state applied:", {
+          //   crystallisations: cs.crystallisations,
+          //   hasReachedE308: cs.hasReachedE308,
+          //   chainTicksThisRun: cs.ticksThisRun,
+          //   lastUpdateBlock: cs.lastUpdateBlock,
+          //   currentBlock: SHREDDER_STATE.currentBlock,
+          //   blocksSinceUpdate: SHREDDER_STATE.currentBlock - cs.lastUpdateBlock,
+          //   improvedTicksThisRun: SHREDDER_STATE.ticksThisRun,
+          //   activeTicks: SHREDDER_STATE.activeTicks,
+          //   softcap: cs.softcap,
+          //   compressions: cs.compressions,
+          //   nextTcCost: cs.nextTcCost ? cs.nextTcCost.toString() : "0",
+          // });
         })
         .catch((err) =>
           console.warn("[Dusted] Chain fetch failed:", err.message),

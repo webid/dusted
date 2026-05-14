@@ -8,12 +8,7 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
-  "permissions": [
-    "sidePanel",
-    "activeTab",
-    "scripting",
-    "storage"
-  ],
+  "permissions": ["sidePanel", "activeTab", "scripting", "storage"],
   "host_permissions": [
     "https://dustprotocol.pages.dev/*",
     "https://node.shadownet.etherlink.com/*"
@@ -34,13 +29,8 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://dustprotocol.pages.dev/*"
-      ],
-      "js": [
-        "break_infinity.js",
-        "content.js"
-      ]
+      "matches": ["https://dustprotocol.pages.dev/*"],
+      "js": ["break_infinity.js", "mote_upgrades.js", "content.js"]
     }
   ]
 }

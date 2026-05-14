@@ -179,6 +179,29 @@ async function fetchChainState(playerAddress) {
     moteUpgrades,
   );
 
+  // divisor will be calculated based on upgrades unlocked, 308 default, but user already has Break-Infinity I => mote formula ÷307
+  // multiplier will be caulated based on upgrades unlocked, user has Mote Prism => ×2 motes on crystallise
+  const estimateMotes = (maxDust, multiplier, divisor) => {
+    const dustDecimal = new Decimal(maxDust);
+
+    if (dustDecimal.lt("1e308")) {
+      return new Decimal(0);
+    }
+
+    const logDust = dustDecimal.log10();
+    const exponent = (logDust - 137.8) / divisor;
+
+    return Decimal.pow(10, exponent).times(multiplier);
+  };
+
+  // estimate pending motes
+  if (allTimeMax.gt(1e308)) {
+    SHREDDER_STATE.pendingMotes = estimateMotes(roundMax, 2, 307).toNumber();
+    SHREDDER_STATE.hasScannedUpgrades = true;
+  } else {
+    SHREDDER_STATE.pendingMotes = 0;
+  }
+
   // console.log("Active Mote Upgrades IDs:", activeUpgrades);
   // iterate over moteUpgradeTiers and log which upgrades inside each tier are active
   moteUpgradeTiers.forEach((tierName, tierIndex) => {
@@ -502,13 +525,13 @@ function extractData() {
   }
 
   // CR Tab Pending Motes Parsing
-  const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
-  const crMatch = fullText.match(crRegex);
-  if (crMatch) {
-    SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ""));
-  } else if (fullText.toLowerCase().includes("crystallise at 1e308")) {
-    SHREDDER_STATE.pendingMotes = 0;
-  }
+  // const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
+  // const crMatch = fullText.match(crRegex);
+  // if (crMatch) {
+  //   SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ""));
+  // } else if (fullText.toLowerCase().includes("crystallise at 1e308")) {
+  //   SHREDDER_STATE.pendingMotes = 0;
+  // }
 
   // Stats Telemetry Parsing
   const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);

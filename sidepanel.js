@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     document.getElementById("motes").textContent = state.motes.toLocaleString();
     if (state.pendingMotes) {
       document.getElementById("pending-motes").parentElement.style.display =
-        "block";
+        "flex";
       document.getElementById("pending-motes").textContent =
         state.pendingMotes.toLocaleString();
     } else {

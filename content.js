@@ -1,3 +1,5 @@
+let showedRoadmap = false;
+
 // -- VIEW Contract (chain-direct data source) ---------------------------------
 const CHAIN_RPC = "https://node.shadownet.etherlink.com";
 const VIEW_ADDR = "0x9aB01b7b864c255Af5c8BD5C0f26D6bE0d8201F6";
@@ -279,6 +281,137 @@ async function fetchChainState(playerAddress) {
   //   `Cheapest Upgrade to Buy:`,
   //   `Tier ${cheapestInactiveUpgrade.tier}: ${moteUpgradeTiers[cheapestInactiveUpgrade.tier]} -> ${cheapestInactiveUpgrade.name}, [${cheapestInactiveUpgrade.cost} motes]`,
   // );
+
+  // const floorMotes = estimateMotes(new Decimal("1e308"), multiplier, divisor);
+  // const tier3Path = [
+  //   { name: "Grand Cascade", cost: 75 },
+  //   { name: "Compression Mastery", cost: 100 },
+  //   { name: "Temporal Echo", cost: 125 },
+  //   { name: "Break-Infinity II", cost: 80 },
+  // ];
+
+  // let totalRounds = 0;
+  // let currentBalance = SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes;
+
+  // const roadmap = tier3Path.map((upgrade) => {
+  //   const needed = Math.max(0, upgrade.cost - currentBalance);
+  //   const rounds = Math.ceil(needed / floorMotes.toNumber());
+
+  //   totalRounds += rounds;
+  //   currentBalance = Math.max(0, currentBalance - upgrade.cost); // Reset balance after "buying"
+
+  //   return { ...upgrade, rounds, cumulative: totalRounds };
+  // });
+
+  // // display roadmap in console in a readable format
+
+  // console.log("Roadmap to Tier 3 Upgrades:");
+  // roadmap.forEach((step, index) => {
+  //   console.log(
+  //     `Step ${index + 1}: ${step.name} (${step.cost} motes) - Rounds: ${step.rounds}, Cumulative: ${step.cumulative}`,
+  //   );
+  // });
+
+  // ROADMAP v2
+  // const calculateRoadmap = (startingMotes, yieldPerRound) => {
+  //   const path = [
+  //     { name: "Compression Mastery", cost: 100 },
+  //     { name: "Temporal Echo", cost: 125 },
+  //     { name: "Break-Infinity II", cost: 80 },
+  //   ];
+
+  //   let balance = startingMotes;
+  //   let totalRounds = 0;
+
+  //   return path.map((step) => {
+  //     const needed = Math.max(0, step.cost - balance);
+  //     const rounds = Math.ceil(needed / yieldPerRound);
+  //     totalRounds += rounds;
+  //     // Simulate buying and carrying over leftovers
+  //     balance = balance + rounds * yieldPerRound - step.cost;
+  //     return { name: step.name, rounds, cumulative: totalRounds };
+  //   });
+  // };
+
+  // const yields = {
+  //   fast: estimateMotes("1e308", multiplier, divisor).toNumber(), // ~7.17M
+  //   softcap: estimateMotes("1e405", multiplier, divisor).toNumber(), // ~14.8M
+  //   deep: 18, // User defined target
+  // };
+
+  // const fastRoadmap = calculateRoadmap(12.26, yields.fast);
+  // const softcapRoadmap = calculateRoadmap(12.26, yields.softcap);
+  // const deepRoadmap = calculateRoadmap(12.26, yields.deep);
+
+  // // todo, log as a table with columns: Upgrade Name | Rounds (Fast) | Rounds (Softcap) | Rounds (Deep)
+
+  // console.log(
+  //   "Upgrade Name         | Fast (Cum.) | Softcap (Cum.) | Deep (Cum.)",
+  // );
+  // fastRoadmap.forEach((step, i) => {
+  //   const f = `${step.rounds} (${step.cumulative})`;
+  //   const s = `${softcapRoadmap[i]?.rounds} (${softcapRoadmap[i]?.cumulative})`;
+  //   const d = `${deepRoadmap[i]?.rounds} (${deepRoadmap[i]?.cumulative})`;
+  //   console.log(
+  //     `${step.name.padEnd(20)} | ${f.padEnd(11)} | ${s.padEnd(14)} | ${d}`,
+  //   );
+  // });
+  // console.log("Fast (1e308):", fastRoadmap);
+  // console.log("Softcap (1e405):", softcapRoadmap);
+  // console.log("Deep (18 motes/round):", deepRoadmap);
+
+  // ROADMAP v3 (with time estimates)
+  if (!showedRoadmap) {
+    const TICK_ESTIMATES = { fast: 23000, softcap: 30920, deep: 45000 };
+
+    const calculateRoadmap = (startingMotes, yieldPerRound, strategyKey) => {
+      const path = [
+        { name: "Compression Mastery", cost: 100 },
+        { name: "Temporal Echo", cost: 125 },
+        { name: "Break-Infinity II", cost: 80 },
+      ];
+
+      let balance = startingMotes;
+      let totalRounds = 0;
+      const tickRate = TICK_ESTIMATES[strategyKey];
+
+      return path.map((step) => {
+        const needed = Math.max(0, step.cost - balance);
+        const rounds = Math.ceil(needed / yieldPerRound);
+        totalRounds += rounds;
+        balance = balance + rounds * yieldPerRound - step.cost;
+        return {
+          name: step.name,
+          rounds,
+          cumulativeRounds: totalRounds,
+          totalTicks: totalRounds * tickRate,
+        };
+      });
+    };
+
+    const yields = {
+      fast: estimateMotes("1e308", multiplier, divisor).toNumber(), // ~7.17M
+      softcap: estimateMotes("1e405", multiplier, divisor).toNumber(), // ~14.8M
+      deep: 18, // User defined target
+    };
+
+    const fastRoadmap = calculateRoadmap(12.26, yields.fast, "fast");
+    const softcapRoadmap = calculateRoadmap(12.26, yields.softcap, "softcap");
+    const deepRoadmap = calculateRoadmap(12.26, yields.deep, "deep");
+
+    console.log(
+      "Upgrade Name         | Fast (Ticks)   | Softcap (Ticks)| Deep (Ticks)",
+    );
+    fastRoadmap.forEach((step, i) => {
+      const f = `${step.cumulativeRounds} (${step.totalTicks.toLocaleString()})`;
+      const s = `${softcapRoadmap[i].cumulativeRounds} (${softcapRoadmap[i].totalTicks.toLocaleString()})`;
+      const d = `${deepRoadmap[i].cumulativeRounds} (${deepRoadmap[i].totalTicks.toLocaleString()})`;
+      console.log(
+        `${step.name.padEnd(20)} | ${f.padEnd(14)} | ${s.padEnd(14)} | ${d}`,
+      );
+    });
+    showedRoadmap = true;
+  }
 
   // dcAmounts[0..7] start at word 15, each FloatNum = 3 words
   const dcAmounts = [];

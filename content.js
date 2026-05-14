@@ -259,7 +259,8 @@ async function fetchChainState(playerAddress) {
     const inactiveUpgradesInTier = upgradesInTier.filter(
       (u) => !activeUpgrades.has(u.id),
     );
-
+    // todo: calculate how much motes each inactive upgrade would give us based on current max dust and formula, and log that too
+    // todo: calculate how much motes each inactive upgrade costs, and log that too, also the total for all inactive upgrades in the tier
     // inactiveUpgradesInTier.length > 0 &&
     //   console.log(
     //     `Tier ${tierIndex} (${tierName}):`,

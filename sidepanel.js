@@ -227,13 +227,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // TC Eff Remaining
     const tcRemEl = document.getElementById("tc-eff-remaining");
-    let remainingTc = 0;
-    if (state.activeTicks === 0) {
-      remainingTc = Math.max(
-        0,
-        (state.tcStart || 0) - (state.ticksThisRun || 0),
-      );
-    }
+    // Calculate remaining ticks to reach TC start threshold
+    const remainingTc = Math.max(
+      0,
+      (state.tcStart || 0) - (state.ticksThisRun || 0),
+    );
 
     if (remainingTc > 0) {
       tcRemEl.innerHTML = `(in ${formatTime(remainingTc).replace(/[()~]/g, "").trim()})`;

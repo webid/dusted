@@ -37,7 +37,7 @@ var SHREDDER_STATE = {
   softcap: 30000,
   motes: 0,
   pendingMotes: 0,
-  targetMotes: 75,
+  targetMotes: 0,
   cheapestUpgrade: null,
   hasScannedTC: false,
   hasScannedUpgrades: false,
@@ -54,6 +54,7 @@ var SHREDDER_STATE = {
   currentBlock: 0,
   lastUpdateBlock: 0,
   chainTicksThisRun: 0,
+  requiredDust: D ? new D(0) : null,
 };
 
 // keccak256 selectors (verified via `cast sig`)
@@ -184,19 +185,61 @@ async function fetchChainState(playerAddress) {
   const estimateMotes = (maxDust, multiplier, divisor) => {
     const dustDecimal = new Decimal(maxDust);
 
-    if (dustDecimal.lt("1e308")) {
-      return new Decimal(0);
-    }
+    if (dustDecimal.lt("1e308")) return new Decimal(0);
 
     const logDust = dustDecimal.log10();
-    const exponent = (logDust - 137.8) / divisor;
+    const exponent = (logDust - 230.2) / divisor;
 
     return Decimal.pow(10, exponent).times(multiplier);
   };
 
+  const estimateRequiredDust = (targetMotes, multiplier, divisor) => {
+    const target = new Decimal(targetMotes);
+
+    if (target.lte(0)) return new Decimal("1e308");
+
+    const baseLog = target.div(multiplier).log10();
+    const targetExponent = baseLog * divisor + 230.2;
+
+    return Decimal.pow(10, targetExponent);
+  };
+
+  // calculate multiplier and divisor based on active upgrades
+  let multiplier = 1;
+  let divisor = 308;
+
+  if (activeUpgrades.has(8)) multiplier *= 2; // Mote Prism
+  if (activeUpgrades.has(14)) multiplier *= 2; // Mote Resonance I
+  if (activeUpgrades.has(13)) divisor = 307; // ÷307 if Break-Infinity I
+  if (activeUpgrades.has(19)) divisor = 306; // ÷306 if Break-Infinity II
+
+  // calculate how high max Dust must go if we want to earn enough motes to buy the cheapest upgrade, based on current upgrades and the motes we already have
+
+  let estimatedRequiredDust;
+  if (
+    SHREDDER_STATE.motes + SHREDDER_STATE.pendingMotes <
+    SHREDDER_STATE.targetMotes
+  ) {
+    estimatedRequiredDust = estimateRequiredDust(
+      SHREDDER_STATE.targetMotes - SHREDDER_STATE.motes,
+      multiplier,
+      divisor,
+    );
+
+    // console.log(
+    //   `Dust required to reach ${
+    //     SHREDDER_STATE.targetMotes - SHREDDER_STATE.motes
+    //   } motes:`,
+    //   estimatedRequiredDust.toExponential(3),
+    // );
+  }
   // estimate pending motes
-  if (allTimeMax.gt(1e308)) {
-    SHREDDER_STATE.pendingMotes = estimateMotes(roundMax, 2, 307).toNumber();
+  if (roundMax.gt(new Decimal("1e308"))) {
+    SHREDDER_STATE.pendingMotes = estimateMotes(
+      roundMax,
+      multiplier,
+      divisor,
+    ).toNumber();
     SHREDDER_STATE.hasScannedUpgrades = true;
   } else {
     SHREDDER_STATE.pendingMotes = 0;
@@ -305,6 +348,7 @@ async function fetchChainState(playerAddress) {
     hasScannedStats: true,
     hasScannedUpgrades: true,
     cheapestUpgrade: cheapestInactiveUpgrade.cost,
+    requiredDust: estimatedRequiredDust,
   };
 }
 
@@ -382,6 +426,23 @@ function applyChainState(cs) {
   }
   SHREDDER_STATE._prevChainTicks = cs.ticksThisRun;
   SHREDDER_STATE.cheapestUpgrade = cs.cheapestUpgrade;
+  // if (
+  //   SHREDDER_STATE.targetMotes === undefined ||
+  //   SHREDDER_STATE.targetMotes === 0
+  // ) {
+  //   SHREDDER_STATE.targetMotes = cs.cheapestUpgrade;
+  //   console.log(
+  //     "SETTING target motes to cheapest upgrade cost:",
+  //     cs.cheapestUpgrade,
+  //   );
+  // }
+  // console.log(
+  //   "target motes",
+  //   SHREDDER_STATE.targetMotes,
+  //   "requiredDust from chain state:",
+  //   cs.requiredDust ? cs.requiredDust.toExponential(3) : cs.requiredDust,
+  // );
+  SHREDDER_STATE.requiredDust = cs.requiredDust;
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -1030,6 +1091,9 @@ const intervalId = setInterval(async () => {
       tcStart: SHREDDER_STATE.tcStart,
       compressions: SHREDDER_STATE.compressions,
       nextTcCost: SHREDDER_STATE.nextTcCost.toString(),
+      requiredDust: SHREDDER_STATE.requiredDust
+        ? SHREDDER_STATE.requiredDust.toExponential(3)
+        : null,
       ...strategy,
     };
 

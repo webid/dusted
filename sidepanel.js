@@ -136,7 +136,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       timeEstEl.innerHTML = ttf > 0 ? formatTime(ttf) : "";
     }
 
-    const softcap = state.softcap || 30760;
+    const softcap = state.softcap;
     const progress = Math.min(100, (state.activeTicks / softcap) * 100);
     document.getElementById("softcap-bar").style.width = `${progress}%`;
     document.getElementById("softcap-text").textContent =
@@ -187,6 +187,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       document.getElementById("cheapest-upgrade-link").textContent =
         state.cheapestUpgrade;
     }
+
+    // update required dust if any
+    // check why state.requiredDust never seems to be set in content.js - is it being overwritten somewhere? is the message not being sent?
+
+    if (state.requiredDust) {
+      document.getElementById("required-dust").textContent = state.requiredDust;
+      document.getElementById("required-dust").parentElement.style.display =
+        "flex";
+    } else {
+      document.getElementById("required-dust").parentElement.style.display =
+        "none";
+    }
+
+    // TODO: automatically update target motes input if user didn't set one yet and we have a cheapest upgrade cost available - this would make the tool more plug-and-play for new users, while still allowing advanced users to set custom targets without interference
+    // if (
+    //   document.getElementById("target-motes").value === "" &&
+    //   state.cheapestUpgrade
+    // ) {
+    //   document.getElementById("target-motes").value = state.cheapestUpgrade;
+    // }
 
     // Update Telemetry
     document.getElementById("ticks-this-run").textContent = (

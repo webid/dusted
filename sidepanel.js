@@ -174,9 +174,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       state.dustPerTick,
     ).toExponential(3);
     document.getElementById("motes").textContent = state.motes.toLocaleString();
-    document.getElementById("pending-motes").textContent = state.pendingMotes
-      ? state.pendingMotes.toLocaleString()
-      : "0";
+    if (state.pendingMotes) {
+      document.getElementById("pending-motes").parentElement.style.display =
+        "block";
+      document.getElementById("pending-motes").textContent =
+        state.pendingMotes.toLocaleString();
+    } else {
+      document.getElementById("pending-motes").parentElement.style.display =
+        "none";
+    }
     document.getElementById("total-motes").textContent = state.totalMotes
       ? state.totalMotes.toLocaleString()
       : state.motes.toLocaleString();

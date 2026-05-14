@@ -180,6 +180,9 @@ async function fetchChainState(playerAddress) {
     moteUpgrades,
   );
 
+  // console.log("max dust this round:", roundMax.toExponential(3));
+  // console.log("all time max dust:", allTimeMax.toExponential(3));
+
   // divisor will be calculated based on upgrades unlocked, 308 default, but user already has Break-Infinity I => mote formula ÷307
   // multiplier will be caulated based on upgrades unlocked, user has Mote Prism => ×2 motes on crystallise
   const estimateMotes = (maxDust, multiplier, divisor) => {
@@ -235,6 +238,7 @@ async function fetchChainState(playerAddress) {
   }
   // estimate pending motes
   if (roundMax.gt(new Decimal("1e308"))) {
+    // console.log("max dust this round:", roundMax.toExponential(3));
     SHREDDER_STATE.pendingMotes = estimateMotes(
       roundMax,
       multiplier,
@@ -263,7 +267,7 @@ async function fetchChainState(playerAddress) {
     //   );
   });
 
-  // TODO: this needs to be a separate function to optimily scan the cheapest inactive upgrade and all its fields
+  // scan the cheapest inactive upgrade
   const cheapestInactiveUpgrade = moteUpgrades.reduce(
     (cheapest, u) =>
       u.cost < cheapest.cost && !activeUpgrades.has(u.id) ? u : cheapest,
@@ -309,12 +313,16 @@ async function fetchChainState(playerAddress) {
   const activeTicks = Math.max(0, ticksRun - tcStart);
 
   // hasReachedE308: correct derivation — no sticky latch needed
-  // True if current dust ≥ 1e308, OR all-time max ≥ 1e308 (a prior run hit it)
+  // True if current dust ≥ 1e308, OR this round max dust ≥ 1e308
   // After crystallization, crys increments but dust resets — we can safely
   // check dust directly each cycle.
   const hasReachedE308 =
-    // dust.gte(new Decimal("1e308")) || allTimeMax.gte(new Decimal("1e308"));
     dust.gte(new Decimal("1e308")) || roundMax.gte(new Decimal("1e308"));
+
+  // console.log("Has reached e308:", hasReachedE308, {
+  //   dust: dust.toExponential(3),
+  //   roundMax: roundMax.toExponential(3),
+  // });
 
   // Build condenser objects compatible with evaluateStrategy()
   const condensers = dcAmounts.map((amt, i) => ({
@@ -442,7 +450,10 @@ function applyChainState(cs) {
   //   "requiredDust from chain state:",
   //   cs.requiredDust ? cs.requiredDust.toExponential(3) : cs.requiredDust,
   // );
-  SHREDDER_STATE.requiredDust = cs.requiredDust;
+  // SHREDDER_STATE.requiredDust = cs.requiredDust;
+  if (cs.requiredDust && cs.requiredDust.gte(1e308))
+    SHREDDER_STATE.requiredDust = cs.requiredDust;
+  else SHREDDER_STATE.requiredDust = undefined;
 }
 
 chrome.runtime.onMessage.addListener((message) => {

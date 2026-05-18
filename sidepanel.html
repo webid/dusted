@@ -25,7 +25,7 @@
       <div class="col">
         <div class="stat-box primary-kpi">
           <h2 id="kpi-label">Ticks to Crystallize (e308)</h2>
-          <div class="big-number"
+          <div class="big-number" id="kpi-value-container"
             style="font-size: 1.4em; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;">
             <span id="time-to-floor">--</span>
             <span id="kpi-separator" style="color: #516079; font-weight: 300; display: none;">|</span>
@@ -172,6 +172,16 @@
     </div>
     <div id="grid-status" class="grid-container">
       <!-- Grid rows -->
+    </div>
+
+    <div style="margin-top: 16px; padding-top: 12px; border-top: 1px dashed rgba(81, 96, 121, 0.3); display: flex; justify-content: space-between; align-items: center; font-size: 0.85em; color: #8da3c7;">
+      <strong>Sound Notifications</strong>
+      <label style="position: relative; display: inline-block; width: 34px; height: 18px;">
+        <input type="checkbox" id="sound-toggle" style="opacity: 0; width: 0; height: 0; position: absolute;">
+        <span id="sound-toggle-slider" style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #516079; transition: .3s; border-radius: 18px;">
+          <span id="sound-toggle-knob" style="position: absolute; content: ''; height: 14px; width: 14px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%;"></span>
+        </span>
+      </label>
     </div>
 
   </div>

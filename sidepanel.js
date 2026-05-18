@@ -1,9 +1,29 @@
 let currentMoteMultiplier = 1;
 let currentMoteDivisor = 308;
 let lastAffordableRecommendation = "";
+let syncedTabs = new Set();
+
+function updateSoundToggleUI(checked) {
+  const slider = document.getElementById("sound-toggle-slider");
+  const knob = document.getElementById("sound-toggle-knob");
+  if (slider && knob) {
+    if (checked) {
+      slider.style.backgroundColor = "#65b086";
+      knob.style.left = "18px";
+    } else {
+      slider.style.backgroundColor = "#516079";
+      knob.style.left = "2px";
+    }
+  }
+}
 
 // Simple Web Audio API beep
 function playPingSound() {
+  const soundEnabled = document.getElementById("sound-toggle")
+    ? document.getElementById("sound-toggle").checked
+    : true;
+  if (!soundEnabled) return;
+
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -74,20 +94,35 @@ function updateSimulation() {
   }
 }
 
-document.getElementById('sim-dust').addEventListener('input', updateSimulation);
-document.getElementById('sim-motes').addEventListener('input', updateSimulation);
-
-document.getElementById("target-motes").addEventListener("input", (e) => {
+function syncTargetMotesWithTab(val) {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (tabs[0]) {
-      chrome.tabs
-        .sendMessage(tabs[0].id, {
-          type: "SET_TARGET_MOTES",
-          value: parseFloat(e.target.value) || 0,
-        })
-        .catch(() => { });
+      chrome.tabs.sendMessage(tabs[0].id, {
+        type: "SET_TARGET_MOTES",
+        value: parseFloat(val) || 0,
+      }, () => {
+        if (chrome.runtime.lastError) {
+          // Ignore connection errors safely
+        }
+      });
     }
   });
+}
+
+document.getElementById('sim-dust').addEventListener('input', (e) => {
+  chrome.storage.local.set({ simDust: e.target.value });
+  updateSimulation();
+});
+
+document.getElementById('sim-motes').addEventListener('input', (e) => {
+  chrome.storage.local.set({ simMotes: e.target.value });
+  updateSimulation();
+});
+
+document.getElementById("target-motes").addEventListener("input", (e) => {
+  const val = parseFloat(e.target.value) || 0;
+  chrome.storage.local.set({ targetMotes: val });
+  syncTargetMotesWithTab(val);
 });
 
 document
@@ -96,14 +131,15 @@ document
     e.preventDefault();
     const val = parseFloat(e.target.textContent);
     document.getElementById("target-motes").value = val;
-    chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-      if (tabs[0]) {
-        chrome.tabs
-          .sendMessage(tabs[0].id, { type: "SET_TARGET_MOTES", value: val })
-          .catch(() => { });
-      }
-    });
+    chrome.storage.local.set({ targetMotes: val });
+    syncTargetMotesWithTab(val);
   });
+
+document.getElementById("sound-toggle").addEventListener("change", (e) => {
+  const checked = e.target.checked;
+  updateSoundToggleUI(checked);
+  chrome.storage.local.set({ soundNotificationsEnabled: checked });
+});
 
 function formatTime(ticks) {
   if (!ticks || ticks <= 0) return "";
@@ -133,11 +169,29 @@ function formatDelta(delta) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "HUD_UPDATE") {
-    const state = message.payload;
+    try {
+      const state = message.payload;
+      const tabId = sender.tab ? sender.tab.id : null;
+      if (tabId && !syncedTabs.has(tabId)) {
+        chrome.storage.local.get("targetMotes", (items) => {
+          if (items.targetMotes !== undefined) {
+            chrome.tabs.sendMessage(tabId, {
+              type: "SET_TARGET_MOTES",
+              value: parseFloat(items.targetMotes) || 0,
+            }, () => {
+              if (chrome.runtime.lastError) {
+                // Ignore
+              } else {
+                syncedTabs.add(tabId);
+              }
+            });
+          }
+        });
+      }
 
-    currentMoteMultiplier = state.moteMultiplier || 1;
-    currentMoteDivisor = state.moteDivisor || 308;
-    updateSimulation(); // Update real-time values if properties changed
+      currentMoteMultiplier = state.moteMultiplier || 1;
+      currentMoteDivisor = state.moteDivisor || 308;
+      updateSimulation(); // Update real-time values if properties changed
 
     // Init Checklist
     const initBox = document.getElementById("init-checklist");
@@ -262,6 +316,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       phaseSpan.textContent = "Pre-Temporal Acceleration";
       phaseSpan.style.color = "#516079";
 
+      document.getElementById("kpi-label").style.display = "block";
+      document.getElementById("kpi-value-container").style.display = "flex";
+
       activeTickContainer.style.display = "none";
       tcGoalDiv.style.display = "block";
       document.getElementById("tc-rem-ticks").textContent = remainingTc.toLocaleString();
@@ -275,6 +332,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     } else if (remainingSoftcap > 0) {
       phaseSpan.textContent = "Temporal Acceleration Active";
       phaseSpan.style.color = "#ff00ff";
+
+      document.getElementById("kpi-label").style.display = "block";
+      document.getElementById("kpi-value-container").style.display = "flex";
 
       activeTickContainer.style.display = "block";
       document.getElementById("active-ticks").textContent = activeTicks.toLocaleString();
@@ -330,15 +390,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       phaseSpan.textContent = "After Softcap";
       phaseSpan.style.color = "#e27e5d";
 
-      activeTickContainer.style.display = "block";
-      document.getElementById("active-ticks").textContent = activeTicks.toLocaleString();
+      document.getElementById("kpi-label").style.display = "none";
+      document.getElementById("kpi-value-container").style.display = "none";
+
+      activeTickContainer.style.display = "none";
 
       tcGoalDiv.style.display = "none";
-      softcapGoalDiv.style.display = "block";
-      document.getElementById("softcap-rem-ticks").textContent = "0";
-      document.getElementById("softcap-rem-time").textContent = "(Active)";
-      document.getElementById("softcap-rem-time").title = "Softcap is currently active.";
-      document.getElementById("softcap-max-dust").style.display = "none";
+      softcapGoalDiv.style.display = "none";
 
       document.getElementById("softcap-bar").style.width = `100%`;
     }
@@ -387,12 +445,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (state.roundMax) {
-      const rdMax = new Decimal(state.roundMax);
-      document.getElementById("max-dust-round").textContent = rdMax.eq(0) ? "0" : rdMax.toExponential(3).replace('e+', 'e');
+      try {
+        const rdMax = new Decimal(state.roundMax);
+        document.getElementById("max-dust-round").textContent = rdMax.eq(0) ? "0" : rdMax.toExponential(3).replace('e+', 'e');
+      } catch (e) {
+        console.warn("Invalid roundMax:", state.roundMax);
+      }
     }
     if (state.allTimeMax) {
-      const evMax = new Decimal(state.allTimeMax);
-      document.getElementById("max-dust-ever").textContent = evMax.eq(0) ? "0" : evMax.toExponential(3).replace('e+', 'e');
+      try {
+        const evMax = new Decimal(state.allTimeMax);
+        document.getElementById("max-dust-ever").textContent = evMax.eq(0) ? "0" : evMax.toExponential(3).replace('e+', 'e');
+      } catch (e) {
+        console.warn("Invalid allTimeMax:", state.allTimeMax);
+      }
     }
 
     // Update recommendation
@@ -534,5 +600,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       row.innerHTML = `<span>${c.tier}</span><span>${new Decimal(c.nextCost).toExponential(3)}</span><span>${formatDelta(c.efficiencyDelta)}</span>`;
       grid.appendChild(row);
     });
+    } catch (err) {
+      console.error("Sidepanel HUD Update Error:", err);
+    }
   }
 });
+
+// Load persisted settings on startup
+chrome.storage.local.get(
+  ["soundNotificationsEnabled", "simDust", "simMotes", "targetMotes"],
+  (items) => {
+    // 1. Sound Notifications
+    const soundEnabled = items.soundNotificationsEnabled !== false;
+    const soundToggle = document.getElementById("sound-toggle");
+    if (soundToggle) {
+      soundToggle.checked = soundEnabled;
+      updateSoundToggleUI(soundEnabled);
+    }
+
+    // 2. Sim Dust
+    const simDustEl = document.getElementById("sim-dust");
+    if (simDustEl && items.simDust !== undefined) {
+      simDustEl.value = items.simDust;
+    }
+
+    // 3. Sim Motes
+    const simMotesEl = document.getElementById("sim-motes");
+    if (simMotesEl && items.simMotes !== undefined) {
+      simMotesEl.value = items.simMotes;
+    }
+
+    // 4. Target Motes
+    const targetMotesEl = document.getElementById("target-motes");
+    if (targetMotesEl && items.targetMotes !== undefined) {
+      targetMotesEl.value = items.targetMotes;
+      syncTargetMotesWithTab(items.targetMotes);
+    }
+
+    updateSimulation();
+  }
+);

@@ -738,7 +738,27 @@ function extractData() {
   // Dust and Dust/Tick
   const dustEl = document.querySelector("span.yel");
   if (dustEl) {
-    SHREDDER_STATE.dust = parseSciNum(dustEl.textContent);
+    const newDust = parseSciNum(dustEl.textContent);
+    
+    // Fast reset detection (crystallization while not on stats tab)
+    if (
+      SHREDDER_STATE.dust &&
+      SHREDDER_STATE.dust.gt(1e10) &&
+      newDust.lt(1e9)
+    ) {
+      SHREDDER_STATE._justReset = true;
+      SHREDDER_STATE.ticksThisRun = 0;
+      SHREDDER_STATE.activeTicks = 0;
+      SHREDDER_STATE.nextTcCost = new Decimal(0);
+      SHREDDER_STATE.hasScannedTC = false;
+      SHREDDER_STATE.compressions = "Pending...";
+      SHREDDER_STATE.cheapestUpgrade = null;
+      SHREDDER_STATE.hasScannedUpgrades = false;
+      SHREDDER_STATE.hasReachedE308 = false;
+      SHREDDER_STATE.pendingMotes = 0;
+    }
+
+    SHREDDER_STATE.dust = newDust;
     dustFound = true;
   }
 

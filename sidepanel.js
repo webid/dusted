@@ -379,11 +379,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (state.requiredDust) {
       document.getElementById("required-dust").textContent = state.requiredDust;
-      document.getElementById("required-dust").parentElement.style.display =
-        "flex";
+      document.getElementById("required-dust-container").style.display =
+        "block";
     } else {
-      document.getElementById("required-dust").parentElement.style.display =
+      document.getElementById("required-dust-container").style.display =
         "none";
+    }
+
+    if (state.roundMax) {
+      document.getElementById("max-dust-round").textContent = new Decimal(state.roundMax).toExponential(3).replace('e+', 'e');
+    }
+    if (state.allTimeMax) {
+      document.getElementById("max-dust-ever").textContent = new Decimal(state.allTimeMax).toExponential(3).replace('e+', 'e');
     }
 
     // Update recommendation

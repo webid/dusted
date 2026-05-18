@@ -573,6 +573,8 @@ async function fetchChainState(playerAddress) {
     hasScannedUpgrades: true,
     cheapestUpgrade: cheapestInactiveUpgrade.cost,
     requiredDust: estimatedRequiredDust,
+    roundMax: roundMax,
+    allTimeMax: allTimeMax,
   };
 }
 

@@ -25,13 +25,17 @@
       <div class="col">
         <div class="stat-box primary-kpi">
           <h2 id="kpi-label">Ticks to Crystallize (e308)</h2>
-          <div class="big-number" style="font-size: 1.4em; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+          <div class="big-number"
+            style="font-size: 1.4em; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;">
             <span id="time-to-floor">--</span>
             <span id="kpi-separator" style="color: #516079; font-weight: 300; display: none;">|</span>
-            <span id="time-estimate" class="custom-tooltip" data-title="" style="color: #8da3c7; font-size: 1em;"></span>
+            <span id="time-estimate" class="custom-tooltip" data-title=""
+              style="color: #8da3c7; font-size: 1em;"></span>
           </div>
           <div id="crys-badge-container" style="margin-top: 6px; display: none;">
-            <span style="color: #65b086; font-size: 0.75em; border: 1px solid rgba(101,176,134,0.4); padding: 3px 8px; border-radius: 3px; white-space: nowrap; font-weight: bold; letter-spacing: 0.5px;">⬡ CRYSTALLIZE AVAILABLE</span>
+            <span
+              style="color: #65b086; font-size: 0.75em; border: 1px solid rgba(101,176,134,0.4); padding: 3px 8px; border-radius: 3px; white-space: nowrap; font-weight: bold; letter-spacing: 0.5px;">⬡
+              CRYSTALLIZE AVAILABLE</span>
           </div>
 
           <div id="phase-container"
@@ -52,17 +56,21 @@
             <div id="goal-tc-start"
               style="margin-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 6px;">
               <div style="margin-bottom: 2px;">Temporal Accel in:</div>
-              <span id="tc-rem-ticks" style="color:#e27e5d; font-weight:bold;">--</span> <span style="color:#516079;">ticks</span>
+              <span id="tc-rem-ticks" style="color:#e27e5d; font-weight:bold;">--</span> <span
+                style="color:#516079;">ticks</span>
               <span style="color:#516079; margin: 0 4px;">|</span>
-              <span id="tc-rem-time" class="custom-tooltip" data-title="" style="color:#e27e5d; font-weight:bold;"></span>
+              <span id="tc-rem-time" class="custom-tooltip" data-title=""
+                style="color:#e27e5d; font-weight:bold;"></span>
             </div>
             <div id="goal-softcap"
               style="margin-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 6px;">
               <div id="softcap-redundant-info">
                 <div style="margin-bottom: 2px;">Softcap in:</div>
-                <span id="softcap-rem-ticks" style="color:#48bbea; font-weight:bold;">--</span> <span style="color:#516079;">ticks</span>
+                <span id="softcap-rem-ticks" style="color:#48bbea; font-weight:bold;">--</span> <span
+                  style="color:#516079;">ticks</span>
                 <span style="color:#516079; margin: 0 4px;">|</span>
-                <span id="softcap-rem-time" class="custom-tooltip" data-title="" style="color:#48bbea; font-weight:bold;"></span>
+                <span id="softcap-rem-time" class="custom-tooltip" data-title=""
+                  style="color:#48bbea; font-weight:bold;"></span>
               </div>
               <div id="softcap-max-dust"
                 style="margin-top: 4px; color: #b39ddb; font-size: 1em; text-transform: none; display:none;"></div>
@@ -87,14 +95,6 @@
           <p><strong title="Total motes you will have after resetting."
               style="cursor:help; border-bottom: 1px dashed #516079;">Projected Total:</strong> <span id="total-motes"
               style="color: #65b086;">0</span></p>
-          <p><strong title="Dust required to reach target motes based on current velocity and upgrades."
-              style="cursor:help; border-bottom: 1px dashed #516079;">Required Dust:</strong> <span
-              id="required-dust">0</span>
-          </p>
-          <div class="input-row">
-            <strong>Target Motes:</strong>
-            <input type="number" id="target-motes" value="0" class="hud-input">
-          </div>
           <div id="cheapest-upgrade-container"
             style="display:none; text-align:right; font-size: 0.75em; margin-top: 6px;">
             <span style="color: #516079;" title="The lowest upgrade cost detected on the Upgrades tab.">Detected Cost:
@@ -104,23 +104,36 @@
           </div>
 
           <details style="margin-top: 12px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 10px;">
-            <summary style="cursor: pointer; color: #8da3c7; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; outline: none; user-select: none;">
+            <summary
+              style="cursor: pointer; color: #8da3c7; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; outline: none; user-select: none;">
               Mote Estimator
             </summary>
             <div style="margin-top: 8px;">
-              <div class="input-row">
+              <p style="margin-bottom: 4px;"><strong>Max Dust (Round):</strong> <span id="max-dust-round" style="color: #b39ddb; float: right; font-family: monospace;">0</span></p>
+              <p style="margin-bottom: 8px;"><strong>Max Dust (Ever):</strong> <span id="max-dust-ever" style="color: #b39ddb; float: right; font-family: monospace;">0</span></p>
+              
+              <div class="input-row" style="border-top: 1px dashed rgba(81, 96, 121, 0.2); padding-top: 8px;">
                 <strong>Max Dust:</strong>
                 <input type="text" id="sim-dust" placeholder="e.g. 1e310" class="hud-input" style="width: 100px;">
               </div>
               <div style="text-align: right; font-size: 0.85em; margin-bottom: 8px; color: #b39ddb;">
-                &rarr; Yields <span id="sim-motes-out" style="color: #48bbea; font-weight: bold;">0</span> Motes
+                &rarr; Yields <span id="sim-motes-out" style="color: #48bbea; font-weight: bold; font-family: monospace;">0</span> Motes
               </div>
               <div class="input-row">
                 <strong>Target Motes:</strong>
                 <input type="number" id="sim-motes" placeholder="e.g. 50" class="hud-input" style="width: 100px;">
               </div>
-              <div style="text-align: right; font-size: 0.85em; color: #b39ddb;">
-                &rarr; Needs <span id="sim-dust-out" style="color: #48bbea; font-weight: bold;">0</span> Dust
+              <div style="text-align: right; font-size: 0.85em; color: #b39ddb; margin-bottom: 8px;">
+                &rarr; Needs <span id="sim-dust-out" style="color: #48bbea; font-weight: bold; font-family: monospace;">0</span> Dust
+              </div>
+
+              <!-- Moved Target Tracking -->
+              <div class="input-row" style="border-top: 1px dashed rgba(81, 96, 121, 0.2); padding-top: 8px;">
+                <strong title="Dust required to reach target motes based on current velocity and upgrades." style="cursor:help; border-bottom: 1px dashed #516079;">Target Total Motes:</strong>
+                <input type="number" id="target-motes" value="0" class="hud-input" style="width: 100px;">
+              </div>
+              <div id="required-dust-container" style="text-align: right; font-size: 0.85em; color: #b39ddb;">
+                &rarr; Needs <span id="required-dust" style="color: #48bbea; font-weight: bold; font-family: monospace;">0</span> Dust
               </div>
             </div>
           </details>

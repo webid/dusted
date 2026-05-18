@@ -1,3 +1,82 @@
+let currentMoteMultiplier = 1;
+let currentMoteDivisor = 308;
+let lastAffordableRecommendation = "";
+
+// Simple Web Audio API beep
+function playPingSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5 note
+    
+    // Quick fade out for a pleasant "ping"
+    gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    
+    osc.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch (e) {
+    console.warn("Audio Context blocked or unsupported:", e);
+  }
+}
+
+function updateSimulation() {
+  const dustVal = document.getElementById('sim-dust').value.trim();
+  const motesVal = document.getElementById('sim-motes').value.trim();
+
+  if (dustVal) {
+    try {
+      const dustDecimal = new Decimal(dustVal);
+      if (dustDecimal.lt("1e308")) {
+        document.getElementById('sim-motes-out').textContent = "0";
+      } else {
+        const logDust = dustDecimal.log10();
+        const exponent = (logDust - 230.2) / currentMoteDivisor;
+        const motes = Decimal.pow(10, exponent).times(currentMoteMultiplier);
+
+        let displayMotes;
+        if (motes.gte(1000)) {
+          displayMotes = motes.toNumber().toLocaleString(undefined, { maximumFractionDigits: 0 });
+        } else {
+          displayMotes = motes.toNumber().toLocaleString(undefined, { maximumFractionDigits: 3 });
+        }
+        document.getElementById('sim-motes-out').textContent = displayMotes;
+      }
+    } catch (e) {
+      document.getElementById('sim-motes-out').textContent = "--";
+    }
+  } else {
+    document.getElementById('sim-motes-out').textContent = "0";
+  }
+
+  if (motesVal) {
+    try {
+      const target = new Decimal(motesVal);
+      if (target.lte(0)) {
+        document.getElementById('sim-dust-out').textContent = "1e308";
+      } else {
+        const baseLog = target.div(currentMoteMultiplier).log10();
+        const targetExponent = baseLog * currentMoteDivisor + 230.2;
+        const reqDust = Decimal.pow(10, targetExponent);
+        document.getElementById('sim-dust-out').textContent = reqDust.toExponential(3).replace("e+", "e");
+      }
+    } catch (e) {
+      document.getElementById('sim-dust-out').textContent = "--";
+    }
+  } else {
+    document.getElementById('sim-dust-out').textContent = "0";
+  }
+}
+
+document.getElementById('sim-dust').addEventListener('input', updateSimulation);
+document.getElementById('sim-motes').addEventListener('input', updateSimulation);
+
 document.getElementById("target-motes").addEventListener("input", (e) => {
   chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
     if (tabs[0]) {
@@ -6,7 +85,7 @@ document.getElementById("target-motes").addEventListener("input", (e) => {
           type: "SET_TARGET_MOTES",
           value: parseFloat(e.target.value) || 0,
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   });
 });
@@ -21,7 +100,7 @@ document
       if (tabs[0]) {
         chrome.tabs
           .sendMessage(tabs[0].id, { type: "SET_TARGET_MOTES", value: val })
-          .catch(() => {});
+          .catch(() => { });
       }
     });
   });
@@ -29,16 +108,16 @@ document
 function formatTime(ticks) {
   if (!ticks || ticks <= 0) return "";
   const totalSeconds = Math.round(ticks);
-  if (totalSeconds === 0) return "(< 1s)";
+  if (totalSeconds === 0) return "< 1s";
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   const unit = (u) =>
     `<span style="text-transform: lowercase; font-size: 0.9em; opacity: 0.7; margin-left: 1px;">${u}</span>`;
 
-  if (h > 0) return `(~${h}${unit("h")} ${m}${unit("m")} ${s}${unit("s")})`;
-  if (m > 0) return `(~${m}${unit("m")} ${s}${unit("s")})`;
-  return `(~${s}${unit("s")})`;
+  if (h > 0) return `~${h}${unit("h")} ${m}${unit("m")} ${s}${unit("s")}`;
+  if (m > 0) return `~${m}${unit("m")} ${s}${unit("s")}`;
+  return `~${s}${unit("s")}`;
 }
 
 function formatDelta(delta) {
@@ -55,6 +134,10 @@ function formatDelta(delta) {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "HUD_UPDATE") {
     const state = message.payload;
+
+    currentMoteMultiplier = state.moteMultiplier || 1;
+    currentMoteDivisor = state.moteDivisor || 308;
+    updateSimulation(); // Update real-time values if properties changed
 
     // Init Checklist
     const initBox = document.getElementById("init-checklist");
@@ -113,6 +196,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const timeEstEl = document.getElementById("time-estimate");
     const kpiLabel = document.getElementById("kpi-label");
 
+    // Helper for localized time
+    const getEstLocalTime = (ticks) => {
+      if (ticks <= 0) return "";
+      const d = new Date(Date.now() + ticks * 1000);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    };
+
     if (state.hasReachedE308) {
       // Post-e308: show productive runway (ticks to softcap) + crystallize badge
       if (ttf > 0) {
@@ -120,53 +210,143 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         kpiLabel.textContent = "Ticks to Softcap";
         ttfEl.textContent = ttf.toLocaleString();
         ttfEl.style.color = "#b39ddb";
-        timeEstEl.innerHTML = `<span style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${formatTime(ttf)}<span style="color: #65b086; font-size: 0.85em; border: 1px solid rgba(101,176,134,0.4); padding: 1px 6px; border-radius: 3px; white-space: nowrap;">⬡ CRYSTALLIZE AVAILABLE</span></span>`;
+        document.getElementById("kpi-separator").style.display = "inline";
+        timeEstEl.innerHTML = formatTime(ttf);
+        timeEstEl.dataset.title = `Est. Time: ${getEstLocalTime(ttf)}`;
+        document.getElementById("crys-badge-container").style.display = "block";
       } else {
         // Post-softcap: nothing left to optimize
         kpiLabel.textContent = "Ticks to Crystallize (e308)";
         ttfEl.textContent = "0";
         ttfEl.style.color = "#65b086";
-        timeEstEl.innerHTML =
-          '<span style="color: #65b086; font-size: 0.85em;">CRYSTALLIZE AVAILABLE</span>';
+        document.getElementById("kpi-separator").style.display = "none";
+        timeEstEl.innerHTML = "";
+        timeEstEl.dataset.title = "";
+        document.getElementById("crys-badge-container").style.display = "block";
       }
     } else {
       kpiLabel.textContent = "Ticks to Crystallize (e308)";
       ttfEl.textContent = ttf > 0 ? ttf.toLocaleString() : "0";
       ttfEl.style.color = ""; // Reset to default
-      timeEstEl.innerHTML = ttf > 0 ? formatTime(ttf) : "";
+      if (ttf > 0) {
+        document.getElementById("kpi-separator").style.display = "inline";
+        timeEstEl.innerHTML = formatTime(ttf);
+        timeEstEl.dataset.title = `Est. Time: ${getEstLocalTime(ttf)}`;
+      } else {
+        document.getElementById("kpi-separator").style.display = "none";
+        timeEstEl.innerHTML = "";
+        timeEstEl.dataset.title = "";
+      }
+      document.getElementById("crys-badge-container").style.display = "none";
     }
 
     const softcap = state.softcap;
-    const progress = Math.min(100, (state.activeTicks / softcap) * 100);
-    document.getElementById("softcap-bar").style.width = `${progress}%`;
-    document.getElementById("softcap-text").textContent =
-      `Active Ticks: ${state.activeTicks.toLocaleString()} / ${softcap.toLocaleString()} (Softcap)`;
-    const softcapRemainingTicks = Math.max(0, softcap - state.activeTicks);
-    const softcapRemText = document.getElementById("softcap-remaining");
-    if (softcapRemainingTicks > 0) {
-      let softcapHtml = `Softcap in: ${softcapRemainingTicks.toLocaleString()} ticks ${formatTime(softcapRemainingTicks)}`;
+    const tcStart = state.tcStart;
+    const ticksThisRun = state.ticksThisRun || 0;
+    const activeTicks = state.activeTicks || 0;
 
-      // Show max dust estimate before softcap when post-e308 and pre-softcap
-      if (
-        state.maxDustBeforeSoftcap !== null &&
-        state.maxDustBeforeSoftcap !== undefined
-      ) {
-        const maxExp = Math.floor(state.maxDustBeforeSoftcap);
-        const maxMantissa = Math.pow(
-          10,
-          state.maxDustBeforeSoftcap - maxExp,
-        ).toFixed(2);
-        softcapHtml += `<div style="margin-top: 4px; color: #b39ddb; font-size: 0.9em; text-transform: none;">⟫ Max Dust/Tick at softcap: ~${maxMantissa}e${maxExp}</div>`;
+    // Unify variables
+    document.getElementById("ticks-this-run").textContent = ticksThisRun.toLocaleString();
+    document.getElementById("softcap-limit").textContent = (softcap || 30760).toLocaleString();
+
+    const phaseSpan = document.getElementById("current-phase");
+    const activeTickContainer = document.getElementById("active-tick-container");
+    const tcGoalDiv = document.getElementById("goal-tc-start");
+    const softcapGoalDiv = document.getElementById("goal-softcap");
+
+    // Calculate Remaining Ticks
+    const remainingTc = Math.max(0, tcStart - ticksThisRun);
+    const remainingSoftcap = Math.max(0, softcap - activeTicks);
+
+    if (remainingTc > 0) {
+      phaseSpan.textContent = "Pre-Temporal Acceleration";
+      phaseSpan.style.color = "#516079";
+
+      activeTickContainer.style.display = "none";
+      tcGoalDiv.style.display = "block";
+      document.getElementById("tc-rem-ticks").textContent = remainingTc.toLocaleString();
+      const timeFmt = formatTime(remainingTc);
+      const timeEl = document.getElementById("tc-rem-time");
+      timeEl.innerHTML = timeFmt;
+      timeEl.dataset.title = `Est. Time: ${getEstLocalTime(remainingTc)}`;
+
+      softcapGoalDiv.style.display = "none";
+      document.getElementById("softcap-bar").style.width = `0%`;
+    } else if (remainingSoftcap > 0) {
+      phaseSpan.textContent = "Temporal Acceleration Active";
+      phaseSpan.style.color = "#ff00ff";
+
+      activeTickContainer.style.display = "block";
+      document.getElementById("active-ticks").textContent = activeTicks.toLocaleString();
+
+      tcGoalDiv.style.display = "none";
+      softcapGoalDiv.style.display = "block";
+      document.getElementById("softcap-rem-ticks").textContent = remainingSoftcap.toLocaleString();
+      document.getElementById("softcap-rem-time").innerHTML = formatTime(remainingSoftcap);
+      document.getElementById("softcap-rem-time").dataset.title = `Est. Time: ${getEstLocalTime(remainingSoftcap)}`;
+      
+      if (state.hasReachedE308) {
+        document.getElementById("softcap-redundant-info").style.display = "none";
+      } else {
+        document.getElementById("softcap-redundant-info").style.display = "block";
       }
 
-      softcapRemText.innerHTML = softcapHtml;
-      softcapRemText.style.color = "#48bbea";
+      const progress = Math.min(100, (activeTicks / softcap) * 100);
+      document.getElementById("softcap-bar").style.width = `${progress}%`;
+
+      const maxDustDiv = document.getElementById("softcap-max-dust");
+      if (state.maxDustBeforeSoftcap !== null && state.maxDustBeforeSoftcap !== undefined) {
+        const maxExp = Math.floor(state.maxDustBeforeSoftcap);
+        const maxMantissa = Math.pow(10, state.maxDustBeforeSoftcap - maxExp).toFixed(2);
+
+        const exponent = (state.maxDustBeforeSoftcap - 230.2) / currentMoteDivisor;
+        let motesStr = "0";
+        if (exponent > 0) {
+          const motesVal = Decimal.pow(10, exponent).times(currentMoteMultiplier);
+          if (motesVal.gte(1000)) {
+            motesStr = motesVal.toNumber().toLocaleString(undefined, { maximumFractionDigits: 0 });
+          } else {
+            motesStr = motesVal.toNumber().toLocaleString(undefined, { maximumFractionDigits: 3 });
+          }
+        }
+
+        maxDustDiv.style.display = "block";
+        maxDustDiv.innerHTML = `
+            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dotted rgba(81, 96, 121, 0.3); line-height: 1.5;">
+              <div style="display: flex; justify-content: space-between;">
+                <span>&raquo; Max Dust/Tick:</span>
+                <span style="color:#48bbea; font-weight:bold;">~${maxMantissa}e${maxExp}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-top: 2px;">
+                <span>&raquo; Est. Yield:</span>
+                <span style="color:#48bbea; font-weight:bold;">${motesStr} Motes</span>
+              </div>
+            </div>
+          `;
+      } else {
+        maxDustDiv.style.display = "none";
+      }
     } else {
-      softcapRemText.textContent = `Softcap active. Base production penalized.`;
-      softcapRemText.style.color = "#e27e5d";
+      phaseSpan.textContent = "After Softcap";
+      phaseSpan.style.color = "#e27e5d";
+
+      activeTickContainer.style.display = "block";
+      document.getElementById("active-ticks").textContent = activeTicks.toLocaleString();
+
+      tcGoalDiv.style.display = "none";
+      softcapGoalDiv.style.display = "block";
+      document.getElementById("softcap-rem-ticks").textContent = "0";
+      document.getElementById("softcap-rem-time").textContent = "(Active)";
+      document.getElementById("softcap-rem-time").title = "Softcap is currently active.";
+      document.getElementById("softcap-max-dust").style.display = "none";
+
+      document.getElementById("softcap-bar").style.width = `100%`;
     }
 
     // Update global stats
+    document.getElementById("crystallisations").textContent = state.crystallisations
+      ? state.crystallisations.toLocaleString()
+      : "0";
     document.getElementById("dust").textContent = new Decimal(
       state.dust,
     ).toExponential(3);
@@ -206,45 +386,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         "none";
     }
 
-    // TODO: automatically update target motes input if user didn't set one yet and we have a cheapest upgrade cost available - this would make the tool more plug-and-play for new users, while still allowing advanced users to set custom targets without interference
-    // if (
-    //   document.getElementById("target-motes").value === "" &&
-    //   state.cheapestUpgrade
-    // ) {
-    //   document.getElementById("target-motes").value = state.cheapestUpgrade;
-    // }
-
-    // Update Telemetry
-    document.getElementById("ticks-this-run").textContent = (
-      state.ticksThisRun || 0
-    ).toLocaleString();
-    document.getElementById("active-ticks").textContent = (
-      state.activeTicks || 0
-    ).toLocaleString();
-    document.getElementById("tc-start").textContent = (
-      state.tcStart || 0
-    ).toLocaleString();
-
-    // TC Eff Remaining
-    const tcRemEl = document.getElementById("tc-eff-remaining");
-    // Calculate remaining ticks to reach TC start threshold
-    const remainingTc = Math.max(
-      0,
-      (state.tcStart || 0) - (state.ticksThisRun || 0),
-    );
-
-    if (remainingTc > 0) {
-      tcRemEl.innerHTML = `(in ${formatTime(remainingTc).replace(/[()~]/g, "").trim()})`;
-      tcRemEl.style.color = "#516079";
-    } else {
-      tcRemEl.textContent = `[ACTIVE]`;
-      tcRemEl.style.color = "#65b086";
-    }
-
-    document.getElementById("softcap-limit").textContent = (
-      state.softcap || 30760
-    ).toLocaleString();
-
     // Update recommendation
     const recEl = document.getElementById("recommendation");
 
@@ -261,16 +402,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       let finalStr = "";
 
-      const others = state.affordableTargets
-        ? state.affordableTargets.filter((t) => t !== bestTarget)
-        : [];
-      const othersHtml =
-        others.length > 0
-          ? `<div style="color:#e27e5d; font-size: 0.85em; margin-top: 4px; font-weight: normal; text-transform: none; letter-spacing: 0;">[+ ${others.join(", ")} READY]</div>`
-          : "";
+      const formatCostStr = (str) => {
+        if (!str) return "0";
+        if (str.includes("e")) {
+          const parts = str.split("e");
+          return `${parseFloat(parts[0]).toFixed(3)}e${parts[1].replace('+', '')}`;
+        }
+        return Number(str).toLocaleString();
+      };
 
-      if (state.bestPurchaseWait > 0) {
-        const timeStr = formatTime(state.bestPurchaseWait)
+      const bestOpt = (state.topOptions && state.topOptions.length > 0) ? state.topOptions[0] : null;
+      const secondOpt = (state.topOptions && state.topOptions.length > 1) ? state.topOptions[1] : null;
+
+      let primaryStats = "";
+      if (bestOpt) {
+        const pctStr = (bestOpt.pctSaved > 0) ? ` <span style="opacity: 0.8; font-size: 0.9em;">(${bestOpt.pctSaved.toFixed(2)}%)</span>` : "";
+        primaryStats = `<div style="color: #b39ddb; font-size: 0.85em; margin-top: 4px; letter-spacing: 0.5px;">COST: <span style="font-family: monospace;">${formatCostStr(bestOpt.cost)}</span> <span style="color: #516079; margin: 0 4px;">|</span> SAVED: <span style="color: #65b086; font-family: monospace;">${formatTime(bestOpt.timeSaved).replace('~', '').trim()}</span>${pctStr}</div>`;
+      }
+
+      let secondaryBlock = "";
+      if (secondOpt) {
+        const secPctStr = (secondOpt.pctSaved > 0) ? ` <span style="opacity: 0.8; font-size: 0.9em;">(${secondOpt.pctSaved.toFixed(2)}%)</span>` : "";
+        secondaryBlock = `
+          <div style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed rgba(81, 96, 121, 0.3); font-size: 0.85em; color: #8da3c7; letter-spacing: 0.5px;">
+            <div style="text-transform: uppercase; margin-bottom: 6px; font-size: 0.85em; opacity: 0.8; font-weight: bold; color: #516079;">Alternative Option</div>
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;">
+              <span style="color: #48bbea; font-weight: bold; font-size: 1.05em;">BUY ${secondOpt.target}</span>
+              <span style="color: #516079;">&mdash;</span>
+              <span style="color: #b39ddb;">COST: <span style="font-family: monospace;">${formatCostStr(secondOpt.cost)}</span></span>
+              <span style="color: #516079;">|</span>
+              <span style="color: #b39ddb;">SAVED: <span style="color: #65b086; font-family: monospace;">${formatTime(secondOpt.timeSaved).replace('~', '').trim()}</span>${secPctStr}</span>
+            </div>
+          </div>
+        `;
+      }
+
+        if (state.bestPurchaseWait > 0) {
+          lastAffordableRecommendation = ""; // Reset since we are waiting again
+          
+          const timeStr = formatTime(state.bestPurchaseWait)
           .replace(/[()~]/g, "")
           .trim();
         finalStr = `
@@ -284,7 +454,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             </div>
             <div style="display: flex; flex-direction: column; border-left: 1px solid rgba(81, 96, 121, 0.3); padding-left: 12px;">
               <span style="font-weight: bold; font-size: 1.1em; letter-spacing: 0.5px; color: #48bbea;">BUY ${bestTarget}</span>
-              ${othersHtml}
+              ${primaryStats}
             </div>
           </div>
         `;
@@ -300,37 +470,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             </div>
             <div style="display: flex; flex-direction: column; border-left: 1px solid rgba(81, 96, 121, 0.3); padding-left: 12px;">
               <span style="font-weight: bold; font-size: 1.1em; letter-spacing: 0.5px; color: #65b086;">BUY ${bestTarget}</span>
-              ${othersHtml}
+              ${primaryStats}
             </div>
           </div>
         `;
+        
+        const currentAffordableStr = `BUY ${bestTarget}`;
+        if (lastAffordableRecommendation !== currentAffordableStr) {
+          playPingSound();
+          lastAffordableRecommendation = currentAffordableStr;
+        }
       }
-
-      // Feature #3: Append chain suggestion below primary recommendation
-      if (state.chainSequence) {
-        const chain = state.chainSequence;
-        const chainSteps = chain.steps.join(" + ");
-        const chainTarget = chain.target;
-        const waitColor = chain.wait > 0 ? "#48bbea" : "#65b086";
-        const chainWaitStr =
-          chain.wait > 0
-            ? `(${formatTime(chain.wait).replace(/[()~]/g, "").trim()})`
-            : "";
-        finalStr += `
-          <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.2); font-size: 0.72em; color: #516079; letter-spacing: 0.3px;">
-            <div style="text-transform: uppercase; margin-bottom: 4px; opacity: 0.7;">Optimal Chain</div>
-            <div style="margin-bottom: 2px;">
-              <span style="color: #65b086;">①</span>
-              <span style="color: #65b086;"> BUY ${chainSteps}</span>
-            </div>
-            <div>
-              <span style="color: ${waitColor};">②</span>
-              <span style="color: ${waitColor};"> BUY ${chainTarget}</span>
-              <span style="color: #516079; opacity: 0.7;"> ${chainWaitStr}</span>
-            </div>
-          </div>
-        `;
-      }
+      
+      finalStr += secondaryBlock;
 
       recEl.innerHTML = finalStr;
       recEl.style.color = "unset";
@@ -342,11 +494,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Update TC
     if (new Decimal(state.nextTcCost).eq(0)) {
       document.getElementById("compressions").textContent = "Pending...";
+      document.getElementById("tc-power-mult").textContent = "--";
+      document.getElementById("tc-multiplier").textContent = "--";
       document.getElementById("next-tc-cost").textContent =
         "(Visit TC tab to scan)";
       document.getElementById("tc-delta").innerHTML = "--";
     } else {
-      document.getElementById("compressions").textContent = state.compressions;
+      const comps = state.compressions || 0;
+      const pMult = state.powerMultiplier || 9;
+      const multiplier = new Decimal(1.01264).pow(comps * pMult);
+
+      document.getElementById("compressions").textContent = comps;
+      document.getElementById("tc-power-mult").textContent = `x${pMult.toFixed(2)} (mote upgrade)`;
+      document.getElementById("tc-multiplier").textContent = `x${multiplier.toExponential(3)}`;
+
       document.getElementById("next-tc-cost").textContent = new Decimal(
         state.nextTcCost,
       ).toExponential(3);

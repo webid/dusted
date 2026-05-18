@@ -25,35 +25,57 @@
       <div class="col">
         <div class="stat-box primary-kpi">
           <h2 id="kpi-label">Ticks to Crystallize (e308)</h2>
-          <div id="time-to-floor" class="big-number">--</div>
-          <div class="sub-text">Ticks Remaining <span id="time-estimate"></span></div>
+          <div class="big-number" style="font-size: 1.4em; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+            <span id="time-to-floor">--</span>
+            <span id="kpi-separator" style="color: #516079; font-weight: 300; display: none;">|</span>
+            <span id="time-estimate" class="custom-tooltip" data-title="" style="color: #8da3c7; font-size: 1em;"></span>
+          </div>
+          <div id="crys-badge-container" style="margin-top: 6px; display: none;">
+            <span style="color: #65b086; font-size: 0.75em; border: 1px solid rgba(101,176,134,0.4); padding: 3px 8px; border-radius: 3px; white-space: nowrap; font-weight: bold; letter-spacing: 0.5px;">⬡ CRYSTALLIZE AVAILABLE</span>
+          </div>
 
-          <div class="progress-container" style="margin-top: 15px;">
+          <div id="phase-container"
+            style="margin-top: 15px; font-weight: bold; color: #48bbea; text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.5px;">
+            <span id="current-phase">Pre-Temporal Acceleration</span>
+          </div>
+
+          <div class="progress-container" style="margin-top: 8px;">
             <div id="softcap-bar" class="progress-bar"></div>
           </div>
-          <div class="sub-text" id="softcap-text">Active Ticks: -- / -- (Softcap)</div>
-          <div class="sub-text" id="softcap-remaining"
-            style="color: #48bbea; margin-top: 4px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 4px;">
-            Softcap in: -- ticks</div>
+
+          <div class="sub-text" id="telemetry-unified" style="margin-top: 8px; line-height: 1.5;">
+            <div><strong>Current Tick:</strong> <span id="ticks-this-run">0</span></div>
+            <div id="active-tick-container" style="display:none;"><strong>Active Tick:</strong> <span
+                id="active-ticks">0</span> / <span id="softcap-limit">0</span> (Softcap)</div>
+
+            <!-- goals -->
+            <div id="goal-tc-start"
+              style="margin-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 6px;">
+              <div style="margin-bottom: 2px;">Temporal Accel in:</div>
+              <span id="tc-rem-ticks" style="color:#e27e5d; font-weight:bold;">--</span> <span style="color:#516079;">ticks</span>
+              <span style="color:#516079; margin: 0 4px;">|</span>
+              <span id="tc-rem-time" class="custom-tooltip" data-title="" style="color:#e27e5d; font-weight:bold;"></span>
+            </div>
+            <div id="goal-softcap"
+              style="margin-top: 6px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 6px;">
+              <div id="softcap-redundant-info">
+                <div style="margin-bottom: 2px;">Softcap in:</div>
+                <span id="softcap-rem-ticks" style="color:#48bbea; font-weight:bold;">--</span> <span style="color:#516079;">ticks</span>
+                <span style="color:#516079; margin: 0 4px;">|</span>
+                <span id="softcap-rem-time" class="custom-tooltip" data-title="" style="color:#48bbea; font-weight:bold;"></span>
+              </div>
+              <div id="softcap-max-dust"
+                style="margin-top: 4px; color: #b39ddb; font-size: 1em; text-transform: none; display:none;"></div>
+            </div>
+          </div>
         </div>
 
-        <div class="stat-box highlight-kpi">
-          <h2>Recommendation Engine</h2>
-          <div id="recommendation">Analyzing Path...</div>
-        </div>
-
-        <h2>Temporal Compressions</h2>
-        <div class="stat-box tc-box">
-          <p><strong>Count:</strong> <span id="compressions">0</span></p>
-          <p><strong>Next Cost:</strong> <span id="next-tc-cost">0</span></p>
-          <p><strong title="Percentage of total grinding time saved if you wait to buy this compression."
-              style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved:</strong> <span id="tc-delta">0%</span>
-          </p>
-        </div>
       </div>
 
       <div class="col">
-        <div class="stat-box">
+        <div class="stat-box" style="height: auto; box-sizing: border-box;">
+          <h2>Global Game Status</h2>
+          <p><strong>Crystallizations:</strong> <span id="crystallisations">0</span></p>
           <p><strong>Dust:</strong> <span id="dust">0</span></p>
           <p><strong title="Current production velocity per tick."
               style="cursor:help; border-bottom: 1px dashed #516079;">Dust/Tick:</strong> <span
@@ -80,19 +102,50 @@
             <a href="#" id="cheapest-upgrade-link"
               style="color: #48bbea; text-decoration: none; border-bottom: 1px dashed #48bbea;">40</a>
           </div>
-        </div>
 
-        <h2>Temporal Telemetry</h2>
-        <div class="stat-box">
-          <p><strong>Ticks This Run:</strong> <span id="ticks-this-run">0</span></p>
-          <p><strong>Active Ticks:</strong> <span id="active-ticks">0</span></p>
-          <p><strong title="Ticks required before Temporal Compression efficiency begins scaling."
-              style="cursor:help; border-bottom: 1px dashed #516079;">TC Eff. Start:</strong> <span><span
-                id="tc-start">0</span> <span id="tc-eff-remaining"
-                style="font-size: 0.85em; margin-left: 4px;"></span></span></p>
-          <p><strong title="Threshold where exponential growth heavily decays."
-              style="cursor:help; border-bottom: 1px dashed #516079;">Softcap Limit:</strong> <span
-              id="softcap-limit">0</span></p>
+          <details style="margin-top: 12px; border-top: 1px dashed rgba(81, 96, 121, 0.3); padding-top: 10px;">
+            <summary style="cursor: pointer; color: #8da3c7; font-weight: bold; font-size: 0.85em; text-transform: uppercase; letter-spacing: 1px; outline: none; user-select: none;">
+              Mote Estimator
+            </summary>
+            <div style="margin-top: 8px;">
+              <div class="input-row">
+                <strong>Max Dust:</strong>
+                <input type="text" id="sim-dust" placeholder="e.g. 1e310" class="hud-input" style="width: 100px;">
+              </div>
+              <div style="text-align: right; font-size: 0.85em; margin-bottom: 8px; color: #b39ddb;">
+                &rarr; Yields <span id="sim-motes-out" style="color: #48bbea; font-weight: bold;">0</span> Motes
+              </div>
+              <div class="input-row">
+                <strong>Target Motes:</strong>
+                <input type="number" id="sim-motes" placeholder="e.g. 50" class="hud-input" style="width: 100px;">
+              </div>
+              <div style="text-align: right; font-size: 0.85em; color: #b39ddb;">
+                &rarr; Needs <span id="sim-dust-out" style="color: #48bbea; font-weight: bold;">0</span> Dust
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="col">
+        <div class="stat-box highlight-kpi" style="height: 100%; box-sizing: border-box;">
+          <h2>Recommendation Engine</h2>
+          <div id="recommendation">Analyzing Path...</div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="stat-box tc-box" style="height: 100%; box-sizing: border-box;">
+          <h2>Temporal Compressions</h2>
+          <p><strong>Count:</strong> <span id="compressions">0</span></p>
+          <p><strong>Power Multiplier:</strong> <span id="tc-power-mult">x9.00</span></p>
+          <p><strong>Multiplier:</strong> <span id="tc-multiplier">x1.00</span></p>
+          <p><strong>Next Cost:</strong> <span id="next-tc-cost">0</span></p>
+          <p><strong title="Percentage of total grinding time saved if you wait to buy this compression."
+              style="cursor:help; border-bottom: 1px dashed #516079;">Time Saved:</strong> <span id="tc-delta">0%</span>
+          </p>
         </div>
       </div>
     </div>

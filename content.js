@@ -215,8 +215,16 @@ async function fetchChainState(playerAddress) {
 
   if (activeUpgrades.has(8)) multiplier *= 2; // Mote Prism
   if (activeUpgrades.has(14)) multiplier *= 2; // Mote Resonance I
-  if (activeUpgrades.has(13)) divisor = 307; // ÷307 if Break-Infinity I
-  if (activeUpgrades.has(19)) divisor = 306; // ÷306 if Break-Infinity II
+  if (activeUpgrades.has(25)) multiplier *= 4; // Mote Resonance II
+  if (activeUpgrades.has(31)) multiplier *= 8; // Mote Resonance III
+  if (activeUpgrades.has(37)) multiplier *= 16; // Mote Amplification
+  if (activeUpgrades.has(39)) multiplier *= 32; // Ascendancy
+
+  if (activeUpgrades.has(13)) divisor = 307; // Break-Infinity I
+  if (activeUpgrades.has(19)) divisor = 306; // Break-Infinity II
+  if (activeUpgrades.has(26)) divisor = 305; // Break-Infinity III
+  if (activeUpgrades.has(32)) divisor = 304; // Break-Infinity IV
+  if (activeUpgrades.has(36)) divisor = 303; // Break-Infinity V
 
   // calculate how high max Dust must go if we want to earn enough motes to buy the cheapest upgrade, based on current upgrades and the motes we already have
 
@@ -362,7 +370,7 @@ async function fetchChainState(playerAddress) {
 
   // ROADMAP v3 (with time estimates)
   if (!showedRoadmap) {
-    const TICK_ESTIMATES = { fast: 23000, softcap: 30920, deep: 45000 };
+    const TICK_ESTIMATES = { fast: 23000, softcap: 36500, deep: 45000 };
 
     const calculateRoadmap = (startingMotes, yieldPerRound, strategyKey) => {
       const path = [
@@ -458,12 +466,87 @@ async function fetchChainState(playerAddress) {
   //   roundMax: roundMax.toExponential(3),
   // });
 
-  // Build condenser objects compatible with evaluateStrategy()
-  const condensers = dcAmounts.map((amt, i) => ({
-    tier: `DC${i + 1}`,
-    amount: amt,
-    nextCost: amt, // dcAmounts[i] IS the next purchase cost
-  }));
+  // Base DC Configs
+  const DC_CONFIGS = [
+    { baseCostExp: 1,  baseInc: 3 },
+    { baseCostExp: 2,  baseInc: 4 },
+    { baseCostExp: 4,  baseInc: 5 },
+    { baseCostExp: 6,  baseInc: 6 },
+    { baseCostExp: 9,  baseInc: 8 },
+    { baseCostExp: 13, baseInc: 10 },
+    { baseCostExp: 18, baseInc: 12 },
+    { baseCostExp: 24, baseInc: 15 },
+  ];
+
+  let powerMultiplier = 1;
+  if (activeUpgrades.has(1)) powerMultiplier *= 1.5;
+  if (activeUpgrades.has(5)) powerMultiplier *= 1.5;
+  if (activeUpgrades.has(11)) powerMultiplier *= 2;
+  if (activeUpgrades.has(20)) powerMultiplier *= 2;
+  if (activeUpgrades.has(33)) powerMultiplier *= 3;
+
+  const tcMult = new Decimal(1.01264).pow(comprP * powerMultiplier);
+
+  let baseDcMult = new Decimal(1);
+  if (activeUpgrades.has(0)) baseDcMult = baseDcMult.times(2);
+  if (activeUpgrades.has(6)) baseDcMult = baseDcMult.times(4);
+  if (activeUpgrades.has(12)) baseDcMult = baseDcMult.times(8);
+  if (activeUpgrades.has(18)) baseDcMult = baseDcMult.times(32);
+  if (activeUpgrades.has(22)) baseDcMult = baseDcMult.times(64);
+  if (activeUpgrades.has(30)) baseDcMult = baseDcMult.times(256);
+  if (activeUpgrades.has(34)) baseDcMult = baseDcMult.times(1024);
+  if (activeUpgrades.has(39)) baseDcMult = baseDcMult.times(4096);
+
+  const sumPurchases = dcPurchases.reduce((a, b) => a + b, 0);
+  if (activeUpgrades.has(27)) baseDcMult = baseDcMult.times(1 + sumPurchases / 100);
+  if (activeUpgrades.has(35)) baseDcMult = baseDcMult.times(1 + sumPurchases / 50);
+  if (activeUpgrades.has(29)) baseDcMult = baseDcMult.times(Decimal.pow(1.001, comprP));
+  
+  // Apply Temporal Compression multiplier
+  baseDcMult = baseDcMult.times(tcMult);
+
+  // Build accurate condenser objects
+  const condensers = [];
+  for (let i = 0; i < 8; i++) {
+    const owned = dcPurchases[i] || 0;
+    const carried = dcCarried[i] || 0;
+    const amount = dcAmounts[i] || new Decimal(0);
+    const config = DC_CONFIGS[i];
+    
+    // Calculate cost
+    const kFactor = carryK || 500;
+    const incExp = Math.max(0.5, config.baseInc - carried / kFactor);
+    const costExp = config.baseCostExp + (owned * incExp);
+    const nextCost = Decimal.pow(10, costExp);
+
+    // Calculate multiplier
+    let mult = new Decimal(baseDcMult);
+    if (i === 0 && activeUpgrades.has(3)) mult = mult.times(4);
+    if (i === 1 && activeUpgrades.has(4)) mult = mult.times(4);
+    if (i === 2 && activeUpgrades.has(7)) mult = mult.times(4);
+    if (i === 3 && activeUpgrades.has(10)) mult = mult.times(4);
+    if (i === 4 && activeUpgrades.has(15)) mult = mult.times(4);
+    if (i === 5 && activeUpgrades.has(17)) mult = mult.times(4);
+    if (i === 6 && activeUpgrades.has(21)) mult = mult.times(4);
+    if (i === 7 && activeUpgrades.has(23)) mult = mult.times(4);
+
+    if (activeUpgrades.has(9) && (i === 0 || i === 2 || i === 4 || i === 6)) {
+        mult = mult.times(4);
+    }
+    if (i === 7 && activeUpgrades.has(24)) {
+        mult = mult.times(Decimal.max(1, Decimal.pow(motes.toNumber(), 0.1)));
+    }
+
+    condensers.push({
+      tier: `DC${i + 1}`,
+      amount: amount,
+      owned: owned,
+      carried: carried,
+      nextCost: nextCost,
+      multiplier: mult,
+      incExp: incExp
+    });
+  }
 
   return {
     dust,
@@ -475,17 +558,16 @@ async function fetchChainState(playerAddress) {
     softcap,
     tcStart,
     compressions: comprP,
+    powerMultiplier: powerMultiplier,
     nextTcCost: compCost,
     crystallisations: crys,
     hasReachedE308,
-    condensers:
-      SHREDDER_STATE.condensers.length > 0
-        ? SHREDDER_STATE.condensers
-        : condensers, // Only override if we don't have any data
+    condensers: condensers,
     carryK,
     dcPurchases,
     dcCarried,
-    // These are now always satisfied from chain data:
+    moteMultiplier: multiplier,
+    moteDivisor: divisor,
     hasScannedTC: true,
     hasScannedStats: true,
     hasScannedUpgrades: true,
@@ -516,37 +598,44 @@ function extractCurrentBlock() {
 /** Merge a chainState object into SHREDDER_STATE. */
 function applyChainState(cs) {
   if (!cs) return;
-  // Only overwrite dust/dustPerTick if chain values are non-zero
-  // (DOM still provides finer-grained unclaimed-dust tracking)
 
-  // if (cs.dust && cs.dust.gt(0)) SHREDDER_STATE.dust = cs.dust;
+  const isReset = cs.crystallisations > (SHREDDER_STATE.crystallisations || 0);
 
-  // if (cs.dustPerTick && cs.dustPerTick.gt(0))
-  //   SHREDDER_STATE.dustPerTick = cs.dustPerTick;
+  if (isReset) {
+    SHREDDER_STATE._justReset = true;
+    SHREDDER_STATE.dust = cs.dust;
+    SHREDDER_STATE.ticksThisRun = cs.ticksThisRun;
+    SHREDDER_STATE.nextTcCost = new Decimal(0);
+    SHREDDER_STATE.hasScannedTC = false;
+    SHREDDER_STATE.compressions = "Pending...";
+    SHREDDER_STATE.cheapestUpgrade = null;
+    SHREDDER_STATE.hasScannedUpgrades = false;
+    SHREDDER_STATE.hasReachedE308 = false;
+    SHREDDER_STATE.pendingMotes = 0;
+  } else {
+    // Normal update: only snap forward to prevent backwards jumping
+    if (cs.dust && (!SHREDDER_STATE.dust || cs.dust.gt(SHREDDER_STATE.dust))) {
+        SHREDDER_STATE.dust = cs.dust;
+    }
+  }
+
+  // We intentionally ignore cs.dustPerTick and cs.ticksThisRun during normal updates
+  // to allow the DOM scrapers (which have exact compounding) to manage them smoothly.
+
+  SHREDDER_STATE.currentBlock = extractCurrentBlock();
   SHREDDER_STATE.motes = cs.motes;
-
-  // Extract current block from DOM
-  const currentBlock = extractCurrentBlock();
-  SHREDDER_STATE.currentBlock = currentBlock;
   SHREDDER_STATE.lastUpdateBlock = cs.lastUpdateBlock;
   SHREDDER_STATE.chainTicksThisRun = cs.ticksThisRun;
-
-  // Calculate improved ticksThisRun using block difference
-  // Formula: ticksThisRun = chainTicksThisRun + (currentBlock - lastUpdateBlock) * 5
-  if (currentBlock > 0 && cs.lastUpdateBlock >= 0) {
-    const blocksSinceUpdate = Math.max(0, currentBlock - cs.lastUpdateBlock);
-    const ticksFromBlocks = blocksSinceUpdate * 5;
-    SHREDDER_STATE.ticksThisRun = cs.ticksThisRun + ticksFromBlocks;
-  } else {
-    // Fallback to chain value if block extraction fails
-    SHREDDER_STATE.ticksThisRun = cs.ticksThisRun;
-  }
-  // SHREDDER_STATE.activeTicks = cs.activeTicks;
   SHREDDER_STATE.activeTicks =
     SHREDDER_STATE.ticksThisRun - (cs.tcStart - cs.crystallisations * 100);
   SHREDDER_STATE.softcap = cs.softcap + cs.crystallisations * 20;
   SHREDDER_STATE.tcStart = cs.tcStart - cs.crystallisations * 100;
   SHREDDER_STATE.compressions = cs.compressions;
+  SHREDDER_STATE.crystallisations = cs.crystallisations;
+  SHREDDER_STATE.powerMultiplier = cs.powerMultiplier || 1;
+  SHREDDER_STATE.moteMultiplier = cs.moteMultiplier || 1;
+  SHREDDER_STATE.moteDivisor = cs.moteDivisor || 308;
+  
   if (cs.nextTcCost && cs.nextTcCost.gt) {
     SHREDDER_STATE.nextTcCost = cs.nextTcCost;
   }
@@ -638,26 +727,20 @@ function ticksToReachFloor(log10P, currentActiveTicks, softcap, logTarget) {
 
 function extractData() {
   const fullText = document.body.innerText;
+  let dustFound = false;
+  let ticksFound = false;
 
-  // Dust and Dust/Tick (Primary: span classes, Fallback: raw text)
+  // Dust and Dust/Tick
   const dustEl = document.querySelector("span.yel");
   if (dustEl) {
     SHREDDER_STATE.dust = parseSciNum(dustEl.textContent);
-  } else {
-    const dMatch = fullText.match(/dust\s+([0-9.e+]+)/i);
-    if (dMatch) SHREDDER_STATE.dust = parseSciNum(dMatch[1]);
+    dustFound = true;
   }
 
   const dustTickEl = document.querySelector("span.oran");
   if (dustTickEl) {
-    // console.log("setting dust/tick from span.oran:", dustTickEl.textContent);
     SHREDDER_STATE.dustPerTick = parseSciNum(dustTickEl.textContent);
-  } else {
-    const dtMatch = fullText.match(/dust \/ tick\s+([0-9.e+]+)/i);
-    if (dtMatch) {
-      // console.log("setting dust/tick from raw text:", dtMatch[1]);
-      SHREDDER_STATE.dustPerTick = parseSciNum(dtMatch[1]);
-    }
+    dustFound = true;
   }
 
   // Parse unclaimed production
@@ -667,77 +750,6 @@ function extractData() {
   } else {
     SHREDDER_STATE.unclaimedDust = new Decimal(0);
   }
-
-  // Motes & Active Ticks via raw text to ignore arbitrary HTML nesting
-  // const motesMatch = fullText.match(/motes\s+~?([\d,.]+)/i);
-  // if (motesMatch)
-  //   SHREDDER_STATE.motes = parseFloat(motesMatch[1].replace(/,/g, ""));
-
-  // const activeTicksMatch = fullText.match(
-  //   /active ticks\s+([\d,]+)(?:\s*\/\s*([\d,]+))?/i,
-  // );
-  // if (activeTicksMatch) {
-  //   SHREDDER_STATE.activeTicks = parseInt(
-  //     activeTicksMatch[1].replace(/,/g, ""),
-  //     10,
-  //   );
-  //   if (activeTicksMatch[2]) {
-  //     SHREDDER_STATE.softcap = parseInt(
-  //       activeTicksMatch[2].replace(/,/g, ""),
-  //       10,
-  //     );
-  //   }
-  // }
-
-  // Upgrades parsing
-  // let cheapestUpgrade = Infinity;
-  // const upgradeMatches = fullText.matchAll(/([\d.]+)([kKmM]?)\s+BUY/gi);
-  // for (const match of upgradeMatches) {
-  //   let cost = parseFloat(match[1]);
-  //   const suffix = match[2].toLowerCase();
-  //   if (suffix === "k") cost /= 1000;
-  //   // Assuming 'm' is motes, so no conversion needed for m since motes are base unit
-  //   if (cost < cheapestUpgrade) {
-  //     cheapestUpgrade = cost;
-  //   }
-  // }
-  // if (cheapestUpgrade !== Infinity) {
-  //   SHREDDER_STATE.cheapestUpgrade = cheapestUpgrade;
-  // }
-
-  // if (
-  //   cheapestUpgrade !== Infinity ||
-  //   fullText.match(/t[1-4][\s\n]*[-–—]/i) ||
-  //   fullText.includes("req:") ||
-  //   fullText.match(/\bt1\b[\s\S]{1,50}\bt2\b[\s\S]{1,50}\bt3\b/i) ||
-  //   fullText.match(/amplifier\s*=>/i)
-  // ) {
-  //   SHREDDER_STATE.hasScannedUpgrades = true;
-  // }
-
-  // Temporal Compression parsing
-  // const compMatch = fullText.match(/compressions\s+(\d+)/i);
-  // if (compMatch) {
-  //   SHREDDER_STATE.compressions = parseInt(compMatch[1], 10);
-  //   SHREDDER_STATE.hasScannedTC = true;
-  // }
-
-  const tcCostMatch = fullText.match(
-    /compressions[\s\S]{1,200}?cost\s+([0-9.e+]+)\s+dust/i,
-  );
-  if (tcCostMatch) {
-    SHREDDER_STATE.nextTcCost = parseSciNum(tcCostMatch[1]);
-    SHREDDER_STATE.hasScannedTC = true;
-  }
-
-  // CR Tab Pending Motes Parsing
-  // const crRegex = /motes gained\s*~?\s*([\d.,]+)/i;
-  // const crMatch = fullText.match(crRegex);
-  // if (crMatch) {
-  //   SHREDDER_STATE.pendingMotes = parseFloat(crMatch[1].replace(/,/g, ""));
-  // } else if (fullText.toLowerCase().includes("crystallise at 1e308")) {
-  //   SHREDDER_STATE.pendingMotes = 0;
-  // }
 
   // Stats Telemetry Parsing
   const ticksRunMatch = fullText.match(/ticks this run\s+([\d,]+)/i);
@@ -749,14 +761,14 @@ function extractData() {
       currentTicks < SHREDDER_STATE.ticksThisRun - 100
     ) {
       // RESET DETECTED (crystallization occurred)
-      SHREDDER_STATE._justReset = true; // Guard against re-latching hasReachedE308 this cycle
+      SHREDDER_STATE._justReset = true; 
       SHREDDER_STATE.nextTcCost = new Decimal(0);
       SHREDDER_STATE.hasScannedTC = false;
       SHREDDER_STATE.compressions = "Pending...";
       SHREDDER_STATE.cheapestUpgrade = null;
       SHREDDER_STATE.hasScannedUpgrades = false;
-      SHREDDER_STATE.hasReachedE308 = false; // Clear on crystallization
-      SHREDDER_STATE.pendingMotes = 0; // Stale CR-tab motes no longer valid
+      SHREDDER_STATE.hasReachedE308 = false; 
+      SHREDDER_STATE.pendingMotes = 0; 
     }
 
     // Apply block-based calculation if we have block data
@@ -769,49 +781,14 @@ function extractData() {
       );
       const ticksFromBlocks = blocksSinceUpdate * 5;
       improvedTicks = currentTicks + ticksFromBlocks;
-      console.log("[Dusted] Stats tab block-based update:", {
-        statsParsedTicks: currentTicks,
-        blocksSinceUpdate,
-        ticksFromBlocks,
-        improvedTicks,
-      });
     }
 
     SHREDDER_STATE.ticksThisRun = improvedTicks;
     SHREDDER_STATE.hasScannedStats = true;
+    ticksFound = true;
   }
-
-  const tcStartMatch = fullText.match(
-    /eff\. tc start \/ softcap\s+([\d,]+)\s*\/\s*([\d,]+)/i,
-  );
-  if (tcStartMatch) {
-    SHREDDER_STATE.tcStart = parseInt(tcStartMatch[1].replace(/,/g, ""), 10);
-    SHREDDER_STATE.softcap = parseInt(tcStartMatch[2].replace(/,/g, ""), 10);
-    SHREDDER_STATE.hasScannedStats = true;
-  }
-
-  // Condenser Grid (Robust row detection ignoring exact CSS styles)
-  const currentCondensers = [];
-  const allDivs = document.querySelectorAll("div");
-  allDivs.forEach((row) => {
-    const children = row.children;
-    if (children.length >= 4) {
-      const tierText = (children[0].textContent || "").trim().toLowerCase();
-      if (/^dc[1-8]$/.test(tierText)) {
-        currentCondensers.push({
-          tier: tierText.toUpperCase(),
-          amount: parseSciNum(children[1].textContent),
-          nextCost: parseSciNum(children[3].textContent),
-        });
-      }
-    }
-  });
-
-  if (currentCondensers.length > 0) {
-    SHREDDER_STATE.condensers = currentCondensers;
-  }
-
-  return SHREDDER_STATE;
+  
+  return { dustFound, ticksFound };
 }
 
 function evaluateStrategy() {
@@ -870,6 +847,7 @@ function evaluateStrategy() {
   let bestPurchaseWait = 0;
   let maxTimeSaved = -Infinity;
   let affordableTargets = [];
+  let purchaseOptions = [];
 
   // Calculate efficiency delta for each condenser
   const evaluatedCondensers = SHREDDER_STATE.condensers.map((c) => {
@@ -911,13 +889,15 @@ function evaluateStrategy() {
         efficiencyDelta =
           timeToFloor > 0 ? (time_saved / timeToFloor) * 100 : 0;
 
-        if (time_saved > maxTimeSaved && time_saved > 0) {
-          maxTimeSaved = time_saved;
-          bestPurchase = c.tier;
-          bestPurchaseWait = c_t_wait;
-        }
-        if (time_saved > 0 && isAffordable) {
-          affordableTargets.push(c.tier);
+        if (time_saved > 0) {
+          purchaseOptions.push({
+            target: c.tier,
+            wait: c_t_wait,
+            timeSaved: time_saved,
+            pctSaved: efficiencyDelta,
+            cost: c.nextCost.toString(),
+            affordable: isAffordable
+          });
         }
       }
     }
@@ -981,151 +961,27 @@ function evaluateStrategy() {
       tc_efficiencyDelta =
         timeToFloor > 0 ? (time_saved_tc / timeToFloor) * 100 : 0;
 
-      if (time_saved_tc > maxTimeSaved && time_saved_tc > 0) {
-        maxTimeSaved = time_saved_tc;
-        bestPurchase = "TC";
-        bestPurchaseWait = t_wait;
-      }
-      if (time_saved_tc > 0 && tcAffordable) {
-        affordableTargets.push("TC");
-      }
-    }
-  }
-
-  // Feature #3: Chain Forecasting
-  // Simulate buying all affordable DCs, then find the best remaining target
-  let chainSequence = null;
-  if (affordableTargets.length > 0 && P_tick.gt(0)) {
-    // Build list of affordable DCs sorted by multiplier (highest first)
-    const affordableDCs = SHREDDER_STATE.condensers
-      .filter((c) => {
-        const diff = Decimal.max(0, c.nextCost.sub(effectiveDust));
-        if (!diff.eq(0) || !MULTIPLIERS[c.tier]) return false;
-        // Apply DC-Spike filter: exclude DC1-DC4 if cost > e100 and cost > P_tick
-        const isDC1_4 = ["DC1", "DC2", "DC3", "DC4"].includes(c.tier);
-        if (
-          isDC1_4 &&
-          c.nextCost.gt(new Decimal("1e100")) &&
-          c.nextCost.gt(P_tick)
-        )
-          return false;
-        return true;
-      })
-      .sort((a, b) => (MULTIPLIERS[b.tier] || 0) - (MULTIPLIERS[a.tier] || 0));
-
-    if (affordableDCs.length > 0) {
-      // Simulate buying all affordable DCs
-      let simP = P_tick;
-      let simDust = effectiveDust;
-      let simActiveTicks = activeTicks;
-      let chainSteps = [];
-
-      for (const dc of affordableDCs) {
-        if (simDust.gte(dc.nextCost)) {
-          simDust = simDust.sub(dc.nextCost);
-          simP = simP.mul(MULTIPLIERS[dc.tier] || 1);
-          chainSteps.push(dc.tier);
-        }
-      }
-
-      if (chainSteps.length > 0) {
-        // Recalculate timeToFloor with simulated P_tick
-        const simTimeToFloor = ticksToReachFloor(
-          simP.log10(),
-          simActiveTicks,
-          softcap,
-          optimizationTarget,
-        );
-
-        // Now evaluate remaining non-affordable upgrades against the boosted state
-        let chainBestTarget = null;
-        let chainBestWait = 0;
-        let chainMaxTimeSaved = -Infinity;
-
-        SHREDDER_STATE.condensers.forEach((c) => {
-          if (chainSteps.includes(c.tier)) return; // Already bought in chain
-          const isDC1_4 = ["DC1", "DC2", "DC3", "DC4"].includes(c.tier);
-          if (
-            isDC1_4 &&
-            c.nextCost.gt(new Decimal("1e100")) &&
-            c.nextCost.gt(simP)
-          )
-            return;
-
-          const diff = Decimal.max(0, c.nextCost.sub(simDust));
-          const chainWait = diff.div(simP).toNumber();
-          const multiplier = MULTIPLIERS[c.tier] || 1.1;
-          const P_new = simP.mul(multiplier);
-          const activeAtPurchase = simActiveTicks + chainWait;
-          const floorAfter = ticksToReachFloor(
-            P_new.log10(),
-            activeAtPurchase,
-            softcap,
-            optimizationTarget,
-          );
-          const totalTime = chainWait + floorAfter;
-          const saved = simTimeToFloor - totalTime;
-
-          if (saved > chainMaxTimeSaved && saved > 0) {
-            chainMaxTimeSaved = saved;
-            chainBestTarget = c.tier;
-            chainBestWait = chainWait;
-          }
+      if (time_saved_tc > 0) {
+        purchaseOptions.push({
+          target: "TC",
+          wait: t_wait,
+          timeSaved: time_saved_tc,
+          pctSaved: tc_efficiencyDelta,
+          cost: SHREDDER_STATE.nextTcCost.toString(),
+          affordable: tcAffordable
         });
-
-        // Also evaluate TC in the chain context
-        if (SHREDDER_STATE.nextTcCost.gt(0)) {
-          const tcDiff = Decimal.max(0, SHREDDER_STATE.nextTcCost.sub(simDust));
-          const tcChainWait = tcDiff.div(simP).toNumber();
-          const motePower = Math.max(1, SHREDDER_STATE.motes);
-          const baseMult = 1.0583 * motePower;
-          let tcMult = new Decimal(baseMult);
-          if (simActiveTicks > 0 && simActiveTicks < softcap) {
-            tcMult = tcMult.mul(Math.pow(1.02, 100));
-          }
-          const P_new_tc = simP.mul(tcMult);
-          const tcActiveAfter = simActiveTicks + tcChainWait + 100;
-          const tcFloorAfter = ticksToReachFloor(
-            P_new_tc.log10(),
-            tcActiveAfter,
-            softcap,
-            optimizationTarget,
-          );
-          const tcTotalTime = tcChainWait + tcFloorAfter;
-          const tcSaved = simTimeToFloor - tcTotalTime;
-          if (tcSaved > chainMaxTimeSaved && tcSaved > 0) {
-            chainMaxTimeSaved = tcSaved;
-            chainBestTarget = "TC";
-            chainBestWait = tcChainWait;
-          }
-        }
-
-        // Compare chain path vs single best target
-        // Chain total = 0 (buy affordable now) + chainBestWait + chainFloorAfter
-        // vs single = bestPurchaseWait + singleFloorAfter
-        if (chainBestTarget) {
-          // The chain's time is measured from current state:
-          // simTimeToFloor already reflects the boost from buying affordable DCs
-          // chainMaxTimeSaved is relative to simTimeToFloor
-          const chainTotalFloor = simTimeToFloor - chainMaxTimeSaved; // time with chain+target
-          const singleTotalFloor = timeToFloor - maxTimeSaved; // time with single best
-
-          if (
-            chainTotalFloor < singleTotalFloor &&
-            chainTotalFloor < timeToFloor
-          ) {
-            // Chain path wins
-            chainSequence = {
-              steps: chainSteps,
-              target: chainBestTarget,
-              wait: chainBestWait,
-              totalTime: chainTotalFloor,
-            };
-          }
-        }
       }
     }
   }
+  // Evaluate top options
+  purchaseOptions.sort((a, b) => b.timeSaved - a.timeSaved);
+  const topOptions = purchaseOptions.slice(0, 2);
+  if (topOptions.length > 0) {
+    bestPurchase = topOptions[0].target;
+    bestPurchaseWait = topOptions[0].wait;
+    maxTimeSaved = topOptions[0].timeSaved;
+  }
+  affordableTargets = purchaseOptions.filter(o => o.affordable).map(o => o.target);
 
   // Hard Exit Rule Simulation
   let recommendation = "Hold Position (Natural Growth)";
@@ -1151,7 +1007,7 @@ function evaluateStrategy() {
     affordableTargets: affordableTargets,
     condensers: evaluatedCondensers,
     tc_efficiencyDelta: tc_efficiencyDelta,
-    chainSequence: chainSequence,
+    topOptions: topOptions,
     maxDustBeforeSoftcap: maxDustBeforeSoftcap,
     hasReachedE308: SHREDDER_STATE.hasReachedE308,
   };
@@ -1215,7 +1071,29 @@ const intervalId = setInterval(async () => {
     }
 
     // 3. DOM extraction (supplements chain data for unclaimed dust, pendingMotes, etc.)
-    extractData();
+    const found = extractData();
+    
+    // If ticks this run is not found on this tab, simulate it
+    if (!found.ticksFound && SHREDDER_STATE.hasScannedStats) {
+      SHREDDER_STATE.ticksThisRun += 1;
+    }
+
+    // Fallback: If we are not on the Dust/Stats tab where elements are visible, use the local ticker
+    if (!found.dustFound && SHREDDER_STATE.hasScannedStats) {
+      if (SHREDDER_STATE.dust && SHREDDER_STATE.dustPerTick) {
+        // Also simulate the 1.02 compounding since the game engine does this
+        const rate = (SHREDDER_STATE.activeTicks < SHREDDER_STATE.softcap) ? 1.02 : Math.pow(1.02, 0.5);
+        SHREDDER_STATE.dustPerTick = SHREDDER_STATE.dustPerTick.mul(rate);
+        SHREDDER_STATE.dust = SHREDDER_STATE.dust.add(SHREDDER_STATE.dustPerTick);
+      }
+    }
+
+    if (SHREDDER_STATE.hasScannedStats) {
+      SHREDDER_STATE.activeTicks = Math.max(
+        0,
+        SHREDDER_STATE.ticksThisRun - SHREDDER_STATE.tcStart
+      );
+    }
     const strategy = evaluateStrategy();
 
     const payload = {
@@ -1239,6 +1117,10 @@ const intervalId = setInterval(async () => {
       requiredDust: SHREDDER_STATE.requiredDust
         ? SHREDDER_STATE.requiredDust.toExponential(3)
         : null,
+      crystallisations: SHREDDER_STATE.crystallisations || 0,
+      powerMultiplier: SHREDDER_STATE.powerMultiplier || 9,
+      moteMultiplier: SHREDDER_STATE.moteMultiplier || 1,
+      moteDivisor: SHREDDER_STATE.moteDivisor || 308,
       ...strategy,
     };
 

@@ -202,3 +202,39 @@ h2 {
   border-color: #ff00ff;
   box-shadow: 0 0 5px rgba(255, 0, 255, 0.5);
 }
+
+/* Remove arrows/spinners from number inputs */
+input[type="number"]::-webkit-inner-spin-button, 
+input[type="number"]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.custom-tooltip {
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dashed #516079;
+}
+
+.custom-tooltip:hover::after {
+  content: attr(data-title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #10141d;
+  color: #48bbea;
+  padding: 4px 8px;
+  border: 1px solid #1c2433;
+  border-radius: 4px;
+  font-size: 1.1em;
+  white-space: nowrap;
+  z-index: 1000;
+  margin-bottom: 4px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+  pointer-events: none;
+  font-family: monospace;
+}

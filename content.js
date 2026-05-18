@@ -638,6 +638,9 @@ function applyChainState(cs) {
   SHREDDER_STATE.moteMultiplier = cs.moteMultiplier || 1;
   SHREDDER_STATE.moteDivisor = cs.moteDivisor || 308;
   
+  if (cs.roundMax) SHREDDER_STATE.roundMax = cs.roundMax.toString();
+  if (cs.allTimeMax) SHREDDER_STATE.allTimeMax = cs.allTimeMax.toString();
+  
   if (cs.nextTcCost && cs.nextTcCost.gt) {
     SHREDDER_STATE.nextTcCost = cs.nextTcCost;
   }
@@ -1123,6 +1126,8 @@ const intervalId = setInterval(async () => {
       powerMultiplier: SHREDDER_STATE.powerMultiplier || 9,
       moteMultiplier: SHREDDER_STATE.moteMultiplier || 1,
       moteDivisor: SHREDDER_STATE.moteDivisor || 308,
+      roundMax: SHREDDER_STATE.roundMax,
+      allTimeMax: SHREDDER_STATE.allTimeMax,
       ...strategy,
     };
 

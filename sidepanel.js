@@ -387,10 +387,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (state.roundMax) {
-      document.getElementById("max-dust-round").textContent = new Decimal(state.roundMax).toExponential(3).replace('e+', 'e');
+      const rdMax = new Decimal(state.roundMax);
+      document.getElementById("max-dust-round").textContent = rdMax.eq(0) ? "0" : rdMax.toExponential(3).replace('e+', 'e');
     }
     if (state.allTimeMax) {
-      document.getElementById("max-dust-ever").textContent = new Decimal(state.allTimeMax).toExponential(3).replace('e+', 'e');
+      const evMax = new Decimal(state.allTimeMax);
+      document.getElementById("max-dust-ever").textContent = evMax.eq(0) ? "0" : evMax.toExponential(3).replace('e+', 'e');
     }
 
     // Update recommendation

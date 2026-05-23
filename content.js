@@ -193,7 +193,7 @@ async function fetchChainState(playerAddress) {
     if (dustDecimal.lt("1e308")) return new Decimal(0);
 
     const logDust = dustDecimal.log10();
-    const exponent = (logDust - 230.2) / divisor;
+    const exponent = logDust / divisor - 0.75;
 
     return Decimal.pow(10, exponent).times(multiplier);
   };
@@ -204,7 +204,7 @@ async function fetchChainState(playerAddress) {
     if (target.lte(0)) return new Decimal("1e308");
 
     const baseLog = target.div(multiplier).log10();
-    const targetExponent = baseLog * divisor + 230.2;
+    const targetExponent = (baseLog + 0.75) * divisor;
 
     return Decimal.pow(10, targetExponent);
   };

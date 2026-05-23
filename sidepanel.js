@@ -57,7 +57,7 @@ function updateSimulation() {
         document.getElementById('sim-motes-out').textContent = "0";
       } else {
         const logDust = dustDecimal.log10();
-        const exponent = (logDust - 230.2) / currentMoteDivisor;
+        const exponent = logDust / currentMoteDivisor - 0.75;
         const motes = Decimal.pow(10, exponent).times(currentMoteMultiplier);
 
         let displayMotes;
@@ -82,7 +82,7 @@ function updateSimulation() {
         document.getElementById('sim-dust-out').textContent = "1e308";
       } else {
         const baseLog = target.div(currentMoteMultiplier).log10();
-        const targetExponent = baseLog * currentMoteDivisor + 230.2;
+        const targetExponent = (baseLog + 0.75) * currentMoteDivisor;
         const reqDust = Decimal.pow(10, targetExponent);
         document.getElementById('sim-dust-out').textContent = reqDust.toExponential(3).replace("e+", "e");
       }
@@ -359,7 +359,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const maxExp = Math.floor(state.maxDustBeforeSoftcap);
         const maxMantissa = Math.pow(10, state.maxDustBeforeSoftcap - maxExp).toFixed(2);
 
-        const exponent = (state.maxDustBeforeSoftcap - 230.2) / currentMoteDivisor;
+        const exponent = state.maxDustBeforeSoftcap / currentMoteDivisor - 0.75;
         let motesStr = "0";
         if (exponent > 0) {
           const motesVal = Decimal.pow(10, exponent).times(currentMoteMultiplier);

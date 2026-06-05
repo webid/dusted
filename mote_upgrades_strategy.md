@@ -36,6 +36,22 @@ Buy these only after the core five are secured, before advancing to Tier 5:
 
 ---
 
+## ⏱️ Run Playstyle: Active Setup vs. Passive Growth
+
+Dusted runs do not require continuous active play. Passive compounding handles the majority of your dust accumulation, but early setup yields massive returns.
+
+### The 15-Minute Setup Rule
+In compounding loops, early actions scale exponentially over time. 
+* **Action Window:** Spend only the **first 10–15 minutes** of any run (including the short run) actively purchasing Dimension Condensers (DCs) and Temporal Compressions (TCs). 
+* **Passive Cruising:** Once the wait time for the next recommended purchase exceeds a few minutes, you have hit your run's baseline velocity ($P_0$). Close the tab/game; passive compounding ($1.02\times$ pre-softcap, $1.02^{0.5}\times$ post-softcap) will run automatically.
+
+### TC vs. DC Priorities
+* **Temporal Compressions (TCs):** Early in a run, TCs are extremely cost-effective because their base multiplier scales linearly with your current mote count (e.g., $\times 428$ per purchase with $\approx 405$ motes).
+* **Dimension Condensers (DCs):** Essential for building the chain-compounding pipeline.
+* **HUD Recommendation:** Instead of guessing, check the Custom HUD (`content.js`). Buy whatever is displayed in the **`Target Acquisition`** recommendation (which dynamically simulates the exact tick-saving math of TC vs. DC) during your active setup window.
+
+---
+
 ## 👑 Tier 5 Upgrade Priorities
 
 Entering Tier 5, your baseline divisor is **`304`** and your multiplier is **`32`** (or **`128`** with T4 completely finished). The cost of upgrades jumps significantly, starting at $1,000$ and peaking at $5,000$ motes.
